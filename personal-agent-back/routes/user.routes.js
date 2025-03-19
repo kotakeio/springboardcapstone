@@ -6,7 +6,7 @@ const jwt = require("jsonwebtoken");
 
 // Import Mongoose models using capitalized names
 const User = require("../models/user");
-const UserEmail = require("../models/UserEmail");
+const UserEmail = require("../models/userEmail");
 
 const { isAuthenticated } = require("../middleware/auth");
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
