@@ -1,7 +1,7 @@
 // routes/user.routes.js
 require("dotenv").config();
 const express = require("express");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 // Import Mongoose models using capitalized names
