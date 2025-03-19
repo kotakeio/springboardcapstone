@@ -1,0 +1,28 @@
+{
+  "development": {
+    "username": "postgres",
+    "password": "DoPerformance11",
+    "database": "ai_agents_db",
+    "host": "127.0.0.1",
+    "dialect": "postgres",
+    "timezone": "-07:00"
+  },
+  "test": {
+    "username": "postgres",
+    "password": "DoPerformance11",
+    "database": "ai_agents_db",
+    "host": "127.0.0.1",
+    "dialect": "postgres"
+  },
+  "production": {
+    "use_env_variable": "DATABASE_URL",
+    "dialect": "postgres",
+    "timezone": "-07:00",
+    "dialectOptions": {
+      "ssl": {
+        "require": true,
+        "rejectUnauthorized": false
+      }
+    }
+  }
+}
