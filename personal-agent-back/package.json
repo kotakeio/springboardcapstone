@@ -2,20 +2,18 @@
   "name": "ai-agents-backend",
   "version": "1.0.0",
   "main": "server.js",
-"scripts": {
-  "dev": "nodemon server.js",
-  "start": "node server.js",
-  "migrate": "chmod +x ./node_modules/.bin/sequelize-cli && npx sequelize-cli db:migrate",
-  "postinstall": "npm rebuild bcrypt --build-from-source --unsafe-perm",
-  "test": "echo \"Error: no test specified\" && exit 1"
-},
+  "scripts": {
+    "dev": "nodemon server.js",
+    "start": "node server.js",
+    "migrate": "chmod +x ./node_modules/.bin/sequelize-cli && npx sequelize-cli db:migrate",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
     "@speechmatics/flow-client": "^0.2.0",
-    "bcrypt": "^5.1.1",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dayjs": "^1.11.13",
