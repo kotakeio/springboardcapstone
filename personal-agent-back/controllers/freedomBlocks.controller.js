@@ -6,7 +6,7 @@ dayjs.extend(isSameOrAfter);
 
 // Import the Mongoose model (ensure the file name matches your conversion)
 const freedomTimeBlocks = require("../models/freedomTimeBlocks");
-const UserEmail = require("../models/UserEmail")
+const UserEmail = require("../models/userEmail")
 
 // Import helper services and utilities
 const { getBusyTimesUntil, listAppointments } = require("../services/calendar/appointments.service");
