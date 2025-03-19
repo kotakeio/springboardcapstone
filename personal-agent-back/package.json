@@ -6,7 +6,7 @@
   "dev": "nodemon server.js",
   "start": "node server.js",
   "migrate": "chmod +x ./node_modules/.bin/sequelize-cli && npx sequelize-cli db:migrate",
-  "postinstall": "npm rebuild bcrypt --build-from-source",
+  "postinstall": "npm rebuild bcrypt --build-from-source --unsafe-perm",
   "test": "echo \"Error: no test specified\" && exit 1"
 },
   "keywords": [],
