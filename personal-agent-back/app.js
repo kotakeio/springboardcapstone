@@ -15,7 +15,7 @@ const app = express();
 
 const allowedOrigins = [
   "http://localhost:5173",      // local Vite dev server
-  "https://springboardcapstone-bzjm.onrender.com/" // replace with your deployed URL
+  "https://springboardcapstone-bzjm.onrender.com" 
 ];
 
 const corsOptions = {
@@ -30,7 +30,6 @@ const corsOptions = {
   },
   credentials: true
 };
-
 
 app.use(cors(corsOptions));
 app.use(express.json());
