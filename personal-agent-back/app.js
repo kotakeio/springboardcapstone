@@ -13,10 +13,24 @@ const userRouter = require("./routes/user.routes");
 
 const app = express();
 
+const allowedOrigins = [
+  "http://localhost:5173",      // local Vite dev server
+  "https://springboardcapstone-bzjm.onrender.com/" // replace with your deployed URL
+];
+
 const corsOptions = {
-  origin: "http://localhost:5173",  // or the exact origin of your Vite dev server
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true
 };
+
 
 app.use(cors(corsOptions));
 app.use(express.json());
