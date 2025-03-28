@@ -171,12 +171,91 @@ router.post("/calendarEmails/:emailId/verify", isAuthenticated, async (req, res)
     if (!userEmailRow) {
       return res.status(404).json({ success: false, message: "Email not found for this user" });
     }
-    // For demonstration, assume verification is always successful.
-    userEmailRow.isCalendarOnboarded = true;
-    await userEmailRow.save();
-    return res.json({ success: true, message: "Calendar verified", userEmail: userEmailRow });
+    
+    // Import the calendar client from your service
+    const { createCalendarClient } = require("../services/calendar/calendarAuth.service");
+    const calendar = createCalendarClient();
+    
+    // Set a time window (now until 24 hours later) to test access.
+    const now = new Date().toISOString();
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const requestBody = {
+      timeMin: now,
+      timeMax: tomorrow,
+      items: [{ id: userEmailRow.email }]
+    };
+    
+    let apiResponse;
+    try {
+      apiResponse = await calendar.freebusy.query({ requestBody });
+      console.log("freeBusy query response:", JSON.stringify(apiResponse.data));
+    } catch (apiErr) {
+      console.error("freeBusy query error:", apiErr);
+      return res.status(400).json({
+        success: false,
+        message: `Verification failed: calendar access error for ${userEmailRow.email}.`
+      });
+    }
+    
+    const calendarInfo = apiResponse.data.calendars && apiResponse.data.calendars[userEmailRow.email];
+    if (!calendarInfo) {
+      return res.status(400).json({
+        success: false,
+        message: `Verification failed: No calendar data returned for ${userEmailRow.email}.`
+      });
+    }
+    
+    if (calendarInfo.errors) {
+      console.error("Calendar info errors:", calendarInfo.errors);
+      return res.status(400).json({
+        success: false,
+        message: `Verification failed for ${userEmailRow.email}: ${JSON.stringify(calendarInfo.errors)}`
+      });
+    }
+    
+    // Use Array.isArray to ensure busy is an array.
+    if (Array.isArray(calendarInfo.busy)) {
+      userEmailRow.isCalendarOnboarded = true;
+      await userEmailRow.save();
+      return res.json({
+        success: true,
+        message: "Calendar verified",
+        userEmail: userEmailRow
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: `Verification failed for ${userEmailRow.email}: Unexpected calendar data format.`
+      });
+    }
+    
   } catch (err) {
     console.error("Error in POST /calendarEmails/:emailId/verify:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/users/calendarEmails/:emailId - hard-delete a userEmail record
+router.delete("/calendarEmails/:emailId", isAuthenticated, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { emailId } = req.params;
+
+    // Find the email that belongs to this user
+    const userEmailRow = await UserEmail.findOne({ _id: emailId, userId });
+    if (!userEmailRow) {
+      return res.status(404).json({
+        success: false,
+        message: "Email not found for this user",
+      });
+    }
+
+    // Hard-delete by removing it from the collection
+    await userEmailRow.deleteOne();
+
+    return res.json({ success: true, message: "Email deleted" });
+  } catch (err) {
+    console.error("Error in DELETE /calendarEmails/:emailId:", err);
     return res.status(500).json({ success: false, message: err.message });
   }
 });

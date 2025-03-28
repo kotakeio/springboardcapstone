@@ -1,14 +1,11 @@
-// src/UserContext.js
+// src/UserContext.jsx
 import React, { createContext, useState, useContext } from "react";
 
 const UserContext = createContext();
 
 export function UserProvider({ children }) {
-  // When a new user registers, set onboardingCompleted to false.
-  const [user, setUser] = useState({
-    // ... other user info,
-    onboardingCompleted: false,
-  });
+  // Initialize user as null until a session check or login occurs.
+  const [user, setUser] = useState(null);
 
   return (
     <UserContext.Provider value={{ user, setUser }}>

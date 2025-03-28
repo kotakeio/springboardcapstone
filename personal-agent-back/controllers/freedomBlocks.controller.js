@@ -1,12 +1,11 @@
 // controllers/freedomBlocks.controller.js (Updated for Mongoose)
-
 const dayjs = require("dayjs");
 const isSameOrAfter = require("dayjs/plugin/isSameOrAfter");
 dayjs.extend(isSameOrAfter);
 
-// Import the Mongoose model (ensure the file name matches your conversion)
+// Import the Mongoose models
 const freedomTimeBlocks = require("../models/freedomTimeBlocks");
-const UserEmail = require("../models/userEmail")
+const UserEmail = require("../models/userEmail");
 
 // Import helper services and utilities
 const { getBusyTimesUntil, listAppointments } = require("../services/calendar/appointments.service");
@@ -32,7 +31,7 @@ async function generateTodayBlocksIfNeeded(calendarIds) {
     return { now: currentTime, busyArray: [] };
   }
   
-  // 2) Gather busy times from Google
+  // 2) Gather busy times from Google for the given verified calendarIds
   const { now, busyArray } = await getBusyTimesUntil(calendarIds, endTime);
 
   // 3) Convert busy times to free intervals
@@ -55,7 +54,7 @@ async function generateTodayBlocksIfNeeded(calendarIds) {
     };
   });
 
-  // 6) Save to DB using insertMany
+  // 6) Save to DB using insertMany if there are any blocks
   if (blockRecords.length) {
     const createdDocs = await freedomTimeBlocks.insertMany(blockRecords);
     return createdDocs;
@@ -70,13 +69,24 @@ async function generateTodayBlocksIfNeeded(calendarIds) {
 async function createFreedomTimeBlocks(req, res) {
   try {
     const userEmails = await UserEmail.find({ userId: req.user._id, deletedAt: null });
-    const calendarIds = userEmails.map(userEmail => userEmail.email);
+    // Filter for only verified emails
+    const verifiedEmails = userEmails.filter(ue => ue.isCalendarOnboarded);
+    if (verifiedEmails.length === 0) {
+      return res.json({
+        success: true,
+        verified: false,
+        message: "No verified calendar emails. Please verify or add a calendar email.",
+        emails: userEmails
+      });
+    }
+    const calendarIds = verifiedEmails.map(ue => ue.email);
 
-    console.log('createFreedomTimeBlocks Emails', calendarIds)
+    console.log('createFreedomTimeBlocks - Verified Emails:', calendarIds);
 
     const createdDocs = await generateTodayBlocksIfNeeded(calendarIds);
     return res.json({
       success: true,
+      verified: true,
       blocks: createdDocs,
       message: "Time blocks created (unapproved) and stored in DB.",
     });
@@ -98,39 +108,50 @@ async function getTodaySchedule(req, res) {
     console.log("Start of day:", startOfDay);
     console.log("End of day:", endOfDay);
 
-    // 2) Retrieve existing blocks from MongoDB
+    // Retrieve existing blocks from MongoDB
     let existingBlocks = await freedomTimeBlocks.find({
       startTime: { $gte: startOfDay },
       endTime: { $lte: endOfDay }
     }).sort({ startTime: 1 });
 
     const userEmails = await UserEmail.find({ userId: req.user._id, deletedAt: null });
-    const calendarIds = userEmails.map(userEmail => userEmail.email);
+    // Filter for verified emails only
+    const verifiedEmails = userEmails.filter(ue => ue.isCalendarOnboarded);
+    if (verifiedEmails.length === 0) {
+      return res.json({
+        success: true,
+        verified: false,
+        message: "No verified calendar emails. Please verify or add a calendar email.",
+        emails: userEmails
+      });
+    }
+    const calendarIds = verifiedEmails.map(ue => ue.email);
 
-    // 3) If none exist, generate blocks
+    // If no blocks exist, generate them using verified emails
     if (existingBlocks.length === 0) {
       await generateTodayBlocksIfNeeded(calendarIds);
     }
 
-    // 4) Query again for today's blocks
+    // Query again for today's blocks
     const todayBlocks = await freedomTimeBlocks.find({
       startTime: { $gte: startOfDay },
       endTime: { $lte: endOfDay }
     }).sort({ startTime: 1 });
 
-    // 5) Fetch today's appointments from Google
+    // Fetch today's appointments from Google for each verified email
     let allAppointments = [];
     for (const calId of calendarIds) {
       const appts = await listAppointments(calId, startOfDay, endOfDay);
       allAppointments = allAppointments.concat(appts);
     }
 
-    // 6) Return the combined schedule
     return res.json({
       success: true,
+      verified: true,
       message: "Fetched today's schedule (appointments + time blocks).",
       appointments: allAppointments,
       timeBlocks: todayBlocks,
+      emails: userEmails
     });
   } catch (err) {
     console.error("Error in getTodaySchedule:", err);
@@ -146,13 +167,12 @@ async function updateFreedomBlock(req, res) {
     const id = req.params.id;
     const { startTime, endTime } = req.body; // Expect ISO strings
 
-    // 1) Find the block by its ID
+    // Find the block by its ID
     const block = await freedomTimeBlocks.findById(id);
     if (!block) {
       return res.status(404).json({ success: false, message: "Block not found" });
     }
 
-    // 2) Convert provided times to dayjs objects
     let newStart = dayjs(startTime);
     let newEnd = dayjs(endTime);
 
@@ -160,7 +180,7 @@ async function updateFreedomBlock(req, res) {
       return res.status(400).json({ success: false, message: "Invalid date/time" });
     }
 
-    // 3) Round times to the nearest 5-minute boundary
+    // Round times to the nearest 5-minute boundary
     newStart = roundToNearest5Min(newStart);
     newEnd = roundToNearest5Min(newEnd);
 
@@ -171,7 +191,7 @@ async function updateFreedomBlock(req, res) {
       });
     }
 
-    // 4) Collision check with other blocks
+    // Collision check with other blocks
     const overlapping = await freedomTimeBlocks.findOne({
       _id: { $ne: block._id },
       startTime: { $lt: newEnd.toDate() },
@@ -184,7 +204,7 @@ async function updateFreedomBlock(req, res) {
       });
     }
 
-    // 5) Update and save the block
+    // Update and save the block
     block.startTime = newStart.toDate();
     block.endTime = newEnd.toDate();
     await block.save();
@@ -216,13 +236,11 @@ async function approveAllBlocks(req, res) {
       endTime: { $lte: endOfDay }
     }).sort({ startTime: 1 });
 
-    // Approve each block and save
     for (const block of unapprovedBlocks) {
       block.approved = true;
       await block.save();
     }
 
-    // Trigger TaskMagic and phone alarms
     const webhookUrl = process.env.FREEDOM_APP_TASKMAGIC_WEBHOOK;
     if (!webhookUrl) {
       console.warn("No FREEDOM_APP_TASKMAGIC_WEBHOOK found in .env, skipping TaskMagic calls.");

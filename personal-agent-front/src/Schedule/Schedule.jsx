@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import dayjs from "dayjs";
 import { fetchTodaySchedule } from "./scheduleAPI.js";
-import { getEventStyle } from "./eventStyle.js"; // for appointments
+import { getEventStyle } from "./eventStyle.js";
 import {
   dayStart,
   START_HOUR,
@@ -14,6 +14,7 @@ import "./Schedule.css";
 import TimeBlock from "./TimeBlock.jsx";
 import BlockEditor from "./BlockEditor";
 import axiosInstance from "../axiosInstance";
+import CalendarEmailManager from "../CalendarEmailManager";
 
 function Schedule() {
   const [appointments, setAppointments] = useState([]);
@@ -22,20 +23,26 @@ function Schedule() {
   const [error, setError] = useState("");
   const [editBlock, setEditBlock] = useState(null);
 
-  function handleEditBlock(block) {
-    setEditBlock(block);
-  }
-
-  // Function to "refetch" schedule data after updates
+  // ----------------------------
+  //  Fetch the schedule data
+  // ----------------------------
   async function loadData() {
     try {
       setLoading(true);
       setError("");
       const data = await fetchTodaySchedule();
-      console.log("Schedule data from backend:", data); // <-- Add this
+      console.log("Schedule data from backend:", data);
+
       if (data.success) {
-        setAppointments(data.appointments || []);
-        setTimeBlocks(data.timeBlocks || []);
+        // If no verified emails
+        if (data.verified === false) {
+          setError("No verified calendar emails found. Please verify or add an email.");
+          setAppointments([]);
+          setTimeBlocks([]);
+        } else {
+          setAppointments(data.appointments || []);
+          setTimeBlocks(data.timeBlocks || []);
+        }
       } else {
         setError(data.message || "Failed to load schedule.");
       }
@@ -47,15 +54,46 @@ function Schedule() {
     }
   }
 
+  // Load data on mount
   useEffect(() => {
     console.log("Schedule component mounted. Loading data...");
     loadData();
   }, []);
 
-  if (loading) return <div>Loading schedule...</div>;
-  if (error) return <div style={{ color: "red" }}>Error: {error}</div>;
+  function handleEditBlock(block) {
+    setEditBlock(block);
+  }
 
-  // Build the day column grid lines...
+  // Approve all unapproved blocks
+  async function handleApproveAll() {
+    try {
+      const { data } = await axiosInstance.post("/api/freedom-blocks/approveAll");
+      if (!data.success) {
+        alert("Error approving blocks: " + data.message);
+      } else {
+        loadData(); // refresh
+      }
+    } catch (err) {
+      alert("Network error approving blocks");
+      console.error(err);
+    }
+  }
+
+  if (loading) return <div>Loading schedule...</div>;
+
+  // If there's an error, we still show the CalendarEmailManager so the user can verify
+  if (error) {
+    return (
+      <div style={{ color: "red" }}>
+        <p>{error}</p>
+        <CalendarEmailManager 
+          onCalendarUpdate={loadData} // <--- pass the prop here
+        />
+      </div>
+    );
+  }
+
+  // Build the day column grid lines
   const totalMinutes = (END_HOUR - START_HOUR) * 60;
   const totalSlots = totalMinutes / MINUTES_PER_SLOT;
   const containerHeight = totalSlots * ROW_HEIGHT_PX;
@@ -68,46 +106,28 @@ function Schedule() {
     current = current.add(MINUTES_PER_SLOT, "minute");
   }
 
-  // Approve button: calls the /approveAll route using Axios
-  async function handleApproveAll() {
-    try {
-      const { data } = await axiosInstance.post("/api/freedom-blocks/approveAll");
-      if (!data.success) {
-        alert("Error approving blocks: " + data.message);
-      } else {
-        // triggers phone alarms or TaskMagic on server side, then refetch
-        loadData();
-      }
-    } catch (err) {
-      alert("Network error approving blocks");
-      console.error(err);
-    }
-  }
-  console.log("Schedule: top-level log");
-
   return (
     <div className="schedule-container">
       <h2>Today's Schedule</h2>
 
-      {/* Approve button (only if we have unapproved blocks) */}
+      {/* Email Manager always shown; pass down a callback for re-fetching */}
+      <CalendarEmailManager onCalendarUpdate={loadData} />
+
+      {/* Show Approve button if unapproved blocks exist */}
       {timeBlocks.some((b) => !b.approved) && (
         <button onClick={handleApproveAll}>Approve All Blocks</button>
       )}
 
       <hr className="day-column-divider" />
 
-      {/* Day column */}
       <div className="day-column-outer">
-        {/* Inner wrapper sized to "containerHeight" */}
         <div className="day-column-inner" style={{ height: containerHeight }}>
-          {/* Grid lines */}
           {gridLines.map((line, idx) => (
             <div key={idx} className="schedule-grid-line" style={{ top: line.top }}>
               <span className="schedule-grid-line-label">{line.label}</span>
             </div>
           ))}
 
-          {/* Appointments (visual only, not draggable) */}
           {appointments.map((appt, idx) => {
             const style = getEventStyle(appt.start?.dateTime, appt.end?.dateTime, true);
             return (
@@ -124,7 +144,6 @@ function Schedule() {
             );
           })}
 
-          {/* Draggable Time Blocks */}
           {timeBlocks.map((block) => (
             <TimeBlock
               key={block._id}

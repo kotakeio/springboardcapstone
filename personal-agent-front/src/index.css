@@ -84,7 +84,7 @@ button:focus-visible {
 }
 /* Disable page scroll */
 html, body {
-  margin-top: 2rem;
+  margin-top: 1rem;
   padding: 0;
   overflow: hidden; /* no scrollbars for the entire page */
   height: 100vh;    /* let’s have it fill the viewport */
