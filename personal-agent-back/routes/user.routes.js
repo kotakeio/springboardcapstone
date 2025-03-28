@@ -292,8 +292,23 @@ router.put("/timezone", isAuthenticated, async (req, res) => {
 });
 
 // GET /api/users/me - returns the logged-in user's information
-router.get("/me", isAuthenticated, (req, res) => {
-  return res.json({ success: true, user: req.user });
+router.get('/me', async (req, res) => {
+  try {
+    // The JWT middleware sets req.user._id if token is valid
+    const userId = req.user._id; 
+    const user = await User.findById(userId);
+
+    if (!user) {
+      // Return a 404 or 401, whichever fits your logic
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    // If found, return the user
+    return res.json({ success: true, user });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
 });
 
 module.exports = router;

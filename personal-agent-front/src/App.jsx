@@ -24,19 +24,24 @@ function App() {
     async function checkSession() {
       try {
         const { data } = await axiosInstance.get("/api/users/me");
-        if (data.success && data.user) {
+        // Now check if there's a real user object
+        if (data.success && data.user && data.user._id) {
           setUser(data.user);
           setIsAuthenticated(true);
         } else {
+          // If user not found, force logout
+          localStorage.removeItem("token");
           setUser(null);
           setIsAuthenticated(false);
         }
       } catch (err) {
+        // Also handle network or 404 errors
+        localStorage.removeItem("token");
         setUser(null);
         setIsAuthenticated(false);
       } finally {
         setIsAuthChecked(true);
-      }
+      }      
     }
     checkSession();
   }, [setUser]);
@@ -68,9 +73,9 @@ function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
-      {/* Everything else is protected */}
+      {/* Protected Schedule Route */}
       <Route
-        path="*"
+        path="/schedule"
         element={
           <PrivateRoute isAuthenticated={isAuthenticated}>
             <div>
@@ -154,7 +159,11 @@ function App() {
                     </button>
                     <Link
                       to="/schedule"
-                      style={{ color: "#fff", textDecoration: "none", marginBottom: 10 }}
+                      style={{
+                        color: "#fff",
+                        textDecoration: "none",
+                        marginBottom: 10,
+                      }}
                       onClick={handleCloseMenu}
                     >
                       Schedule
@@ -188,6 +197,12 @@ function App() {
           </PrivateRoute>
         }
       />
+
+      {/* Redirect root path to /schedule */}
+      <Route path="/" element={<Navigate to="/schedule" replace />} />
+
+      {/* Catch-all route for undefined paths */}
+      <Route path="*" element={<div>Page not found</div>} />
     </Routes>
   );
 }

@@ -90,7 +90,8 @@ export default [
 --- Start of E:\Springboard Projects\Capstone\springboardcapstone\personal-agent-front\src\App.jsx ---
 // src/App.jsx
 import React, { useState, useEffect } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate, Link } from "react-router-dom";
+import { FaBars } from "react-icons/fa";
 import { useUser } from "./UserContext";
 import axiosInstance from "./axiosInstance";
 
@@ -103,6 +104,10 @@ function App() {
   const { setUser } = useUser();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthChecked, setIsAuthChecked] = useState(false);
+  const navigate = useNavigate();
+
+  // State for the slide-out menu
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Check session on mount.
   useEffect(() => {
@@ -130,24 +135,149 @@ function App() {
     return <div>Loading...</div>;
   }
 
+  // Logout function: clears token and resets state
+  function handleLogout() {
+    localStorage.removeItem("token");
+    setUser(null);
+    setIsAuthenticated(false);
+    navigate("/login");
+  }
+
+  // Toggle menu state
+  function handleToggleMenu() {
+    setMenuOpen(!menuOpen);
+  }
+
+  function handleCloseMenu() {
+    setMenuOpen(false);
+  }
+
   return (
     <Routes>
       {/* Public Routes */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
-      {/* Protected Route */}
+      {/* Everything else is protected */}
       <Route
-        path="/schedule"
+        path="*"
         element={
           <PrivateRoute isAuthenticated={isAuthenticated}>
-            <Schedule />
+            <div>
+              {/* Header Bar */}
+              <header
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: "60px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  backgroundColor: "#333",
+                  padding: "0 1rem",
+                  boxSizing: "border-box",
+                  zIndex: 1000,
+                }}
+              >
+                <button
+                  onClick={handleToggleMenu}
+                  style={{
+                    background: "none",
+                    border: "1px solid white",
+                    padding: "0.4rem",
+                    borderRadius: "6px",
+                    color: "#fff",
+                    fontSize: "1.5rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  <FaBars />
+                </button>
+              </header>
+
+              {/* Slide-out Menu */}
+              {menuOpen && (
+                <>
+                  <div
+                    onClick={handleCloseMenu}
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      left: 0,
+                      width: "100vw",
+                      height: "100vh",
+                      backgroundColor: "rgba(0, 0, 0, 0.5)",
+                      zIndex: 999,
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      right: 0,
+                      width: "200px",
+                      height: "100vh",
+                      backgroundColor: "#222",
+                      zIndex: 1000,
+                      display: "flex",
+                      flexDirection: "column",
+                      padding: "1rem",
+                      boxSizing: "border-box",
+                      transition: "transform 0.3s ease-in-out",
+                    }}
+                  >
+                    <button
+                      onClick={handleCloseMenu}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#fff",
+                        fontSize: "1rem",
+                        marginBottom: "1rem",
+                        alignSelf: "flex-end",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Close ✕
+                    </button>
+                    <Link
+                      to="/schedule"
+                      style={{ color: "#fff", textDecoration: "none", marginBottom: 10 }}
+                      onClick={handleCloseMenu}
+                    >
+                      Schedule
+                    </Link>
+                    <button
+                      onClick={() => {
+                        handleCloseMenu();
+                        handleLogout();
+                      }}
+                      style={{
+                        marginTop: "auto",
+                        color: "#fff",
+                        background: "none",
+                        border: "1px solid white",
+                        padding: "0.4rem",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Main Protected Content with padding to avoid header overlap */}
+              <div style={{ padding: "80px 1rem 1rem 1rem" }}>
+                <Schedule />
+              </div>
+            </div>
           </PrivateRoute>
         }
       />
-
-      {/* Default redirection: if logged in go to schedule; otherwise, to login */}
-      <Route path="*" element={<Navigate to={isAuthenticated ? "/schedule" : "/login"} />} />
     </Routes>
   );
 }
@@ -186,6 +316,386 @@ axiosInstance.interceptors.request.use(
 export default axiosInstance;
 
 --- End of E:\Springboard Projects\Capstone\springboardcapstone\personal-agent-front\src\axiosInstance.js ---
+
+--- Start of E:\Springboard Projects\Capstone\springboardcapstone\personal-agent-front\src\CalendarEmailManager.jsx ---
+import React, { useState, useEffect } from "react";
+import axiosInstance from "./axiosInstance";
+
+function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
+  const [emails, setEmails] = useState([]);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [emailToDelete, setEmailToDelete] = useState(null);
+  const [isAccordionOpen, setIsAccordionOpen] = useState(false);
+
+  // ----------------------------
+  //  Fetch Emails on Mount
+  // ----------------------------
+  async function fetchEmails() {
+    try {
+      const { data } = await axiosInstance.get("/api/users/calendarEmails");
+      if (data.success) {
+        setEmails(data.emails);
+
+        // Update parent's email list if needed
+        if (onEmailsUpdated) {
+          onEmailsUpdated(data.emails);
+        }
+
+        // Accordion auto-open/close logic
+        const hasVerified = data.emails.some((e) => e.isCalendarOnboarded);
+        setIsAccordionOpen(!hasVerified);
+      } else {
+        setStatusMessage("Error fetching emails: " + data.message);
+      }
+    } catch (err) {
+      console.error(err);
+      setStatusMessage("Network error fetching emails");
+    }
+  }
+
+  useEffect(() => {
+    fetchEmails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ----------------------------
+  //  Toggle Accordion
+  // ----------------------------
+  function toggleAccordion() {
+    setIsAccordionOpen(!isAccordionOpen);
+  }
+
+  // ----------------------------
+  //  Handle Verification
+  // ----------------------------
+  async function handleVerify(emailId) {
+    setStatusMessage("");
+    try {
+      const { data } = await axiosInstance.post(
+        `/api/users/calendarEmails/${emailId}/verify`
+      );
+      if (data.success) {
+        setStatusMessage("Verified email: " + data.userEmail.email);
+        // Refresh emails
+        fetchEmails();
+
+        // ALSO re-fetch the schedule
+        if (onCalendarUpdate) {
+          onCalendarUpdate();
+        }
+      } else {
+        setStatusMessage(formatVerificationError(data.message));
+      }
+    } catch (err) {
+      console.error(err);
+      if (err.response && err.response.data && err.response.data.message) {
+        setStatusMessage(formatVerificationError(err.response.data.message));
+      } else {
+        setStatusMessage("Network error verifying email");
+      }
+    }
+  }
+
+  // ----------------------------
+  //  Handle Deletion (Open Modal)
+  // ----------------------------
+  function handleOpenDeleteModal(emailObj) {
+    setEmailToDelete(emailObj);
+    setIsDeleteModalOpen(true);
+    setStatusMessage("");
+  }
+
+  // ----------------------------
+  //  Confirm Deletion
+  // ----------------------------
+  async function handleConfirmDelete() {
+    if (!emailToDelete) return;
+    const { _id, email } = emailToDelete;
+    setStatusMessage("");
+    try {
+      const { data } = await axiosInstance.delete(
+        `/api/users/calendarEmails/${_id}`
+      );
+      if (data.success) {
+        setStatusMessage(`Deleted email: ${email}`);
+        fetchEmails();
+        // Possibly re-fetch the schedule if needed
+        if (onCalendarUpdate) {
+          onCalendarUpdate();
+        }
+      } else {
+        setStatusMessage(`Error deleting email: ${data.message}`);
+      }
+    } catch (err) {
+      console.error(err);
+      setStatusMessage("Network error deleting email");
+    } finally {
+      setIsDeleteModalOpen(false);
+      setEmailToDelete(null);
+    }
+  }
+
+  // ----------------------------
+  //  Format Verification Errors
+  // ----------------------------
+  function formatVerificationError(rawMessage) {
+    let email = "";
+    const emailMatch = rawMessage.match(/for\s+([^:]+):/);
+    if (emailMatch) {
+      email = emailMatch[1].trim();
+    }
+    let reason = "";
+    const reasonMatch = rawMessage.match(/"reason":"([^"]+)"/);
+    if (reasonMatch) {
+      reason = reasonMatch[1];
+    }
+    if (email && reason) {
+      return `Verification failed for ${email} (${reason})`;
+    }
+    return `Verification failed: ${rawMessage}`;
+  }
+
+  // ----------------------------
+  //  Handle Adding a New Email
+  // ----------------------------
+  async function handleAddEmail(e) {
+    e.preventDefault();
+    if (!newEmail) return;
+    setStatusMessage("");
+    try {
+      const { data } = await axiosInstance.post("/api/users/calendarEmails", {
+        email: newEmail,
+      });
+      if (data.success) {
+        setStatusMessage("Added new email!");
+        setNewEmail("");
+        setIsAddModalOpen(false);
+        fetchEmails();
+
+        // Re-fetch schedule to see new email's effect
+        if (onCalendarUpdate) {
+          onCalendarUpdate();
+        }
+      } else {
+        setStatusMessage("Error adding email: " + data.message);
+      }
+    } catch (err) {
+      console.error(err);
+      setStatusMessage("Network error adding email");
+    }
+  }
+
+  // ----------------------------
+  //  Render
+  // ----------------------------
+  return (
+    <div
+      style={{
+        border: "2px solid #888",
+        padding: "1rem",
+        borderRadius: "6px",
+        backgroundColor: "#333",
+        color: "#fff",
+        marginBottom: "1rem",
+      }}
+    >
+      {/* Accordion Header */}
+      <div
+        onClick={toggleAccordion}
+        style={{
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <h3 style={{ margin: 0 }}>Your Calendar Emails</h3>
+        <span>{isAccordionOpen ? "▲" : "▼"}</span>
+      </div>
+
+      {/* Accordion Content */}
+      {isAccordionOpen && (
+        <>
+          {emails.length === 0 ? (
+            <p>No emails found yet.</p>
+          ) : (
+            emails.map((ue) => (
+              <div
+                key={ue._id}
+                style={{
+                  marginBottom: "0.5rem",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                {/* "X" icon for deletion */}
+                <button
+                  onClick={() => handleOpenDeleteModal(ue)}
+                  style={{
+                    marginRight: "0.5rem",
+                    background: "none",
+                    border: "none",
+                    color: "red",
+                    fontWeight: "bold",
+                    cursor: "pointer",
+                  }}
+                >
+                  X
+                </button>
+                <span>{ue.email}</span>
+                {ue.isCalendarOnboarded ? (
+                  <span style={{ marginLeft: "1rem", color: "#32CD32" }}>
+                    Verified
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => handleVerify(ue._id)}
+                    style={{ marginLeft: "1rem" }}
+                  >
+                    Verify
+                  </button>
+                )}
+              </div>
+            ))
+          )}
+
+          {/* Status Message */}
+          {statusMessage && (
+            <p style={{ color: "#1E90FF", marginTop: "0.5rem" }}>
+              {statusMessage}
+            </p>
+          )}
+
+          {/* Add Email Button */}
+          <button onClick={() => setIsAddModalOpen(true)} style={{ marginTop: "1rem" }}>
+            Add Email
+          </button>
+        </>
+      )}
+
+      {/* ADD EMAIL MODAL */}
+      {isAddModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#444",
+              padding: "1rem",
+              borderRadius: "6px",
+              minWidth: "300px",
+              maxWidth: "400px",
+              width: "90%",
+              color: "#fff",
+              boxSizing: "border-box",
+            }}
+          >
+            <h4 style={{ marginTop: 0 }}>Add a New Email</h4>
+            <form onSubmit={handleAddEmail}>
+              <input
+                type="email"
+                placeholder="Enter email..."
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "0.5rem",
+                  marginBottom: "0.5rem",
+                  boxSizing: "border-box",
+                }}
+              />
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "0.5rem",
+                }}
+              >
+                <button type="submit">Submit</button>
+                <button type="button" onClick={() => setIsAddModalOpen(false)}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {isDeleteModalOpen && emailToDelete && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#444",
+              padding: "1rem",
+              borderRadius: "6px",
+              minWidth: "300px",
+              maxWidth: "400px",
+              width: "90%",
+              color: "#fff",
+              boxSizing: "border-box",
+            }}
+          >
+            <h4 style={{ marginTop: 0 }}>Delete Email</h4>
+            <p>
+              Are you sure you want to delete:{" "}
+              <strong>{emailToDelete.email}</strong>?
+            </p>
+            <div
+              style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}
+            >
+              <button
+                onClick={handleConfirmDelete}
+                style={{ backgroundColor: "red", color: "#fff" }}
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => {
+                  setIsDeleteModalOpen(false);
+                  setEmailToDelete(null);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default CalendarEmailManager;
+
+--- End of E:\Springboard Projects\Capstone\springboardcapstone\personal-agent-front\src\CalendarEmailManager.jsx ---
 
 --- Start of E:\Springboard Projects\Capstone\springboardcapstone\personal-agent-front\src\home.jsx ---
 // src/Home.jsx
@@ -299,7 +809,7 @@ button:focus-visible {
 }
 /* Disable page scroll */
 html, body {
-  margin-top: 2rem;
+  margin-top: 1rem;
   padding: 0;
   overflow: hidden; /* no scrollbars for the entire page */
   height: 100vh;    /* let’s have it fill the viewport */
@@ -539,13 +1049,19 @@ createRoot(document.getElementById('root')).render(
 // src/PrivateRoute.jsx
 import React from "react";
 import { Navigate } from "react-router-dom";
+import { useUser } from "./UserContext"; // Import the user context
 
-function PrivateRoute({ isAuthenticated, children }) {
-  if (!isAuthenticated) {
-    console.log("PrivateRoute => Not Authenticated => redirecting to /login");
+function PrivateRoute({ children }) {
+  const { user } = useUser(); // Get the current user from context
+
+  // If no user is found, the user is not authenticated, so redirect to login
+  if (!user) {
+    console.log("PrivateRoute => No user in context => redirecting to /login");
     return <Navigate to="/login" />;
   }
-  console.log("PrivateRoute => Authenticated => returning children");
+
+  // If a user exists, allow rendering the protected content
+  console.log("PrivateRoute => User found, returning children");
   return children;
 }
 
@@ -842,7 +1358,7 @@ export function getEventStyle(startISO, endISO, isBlockApproved = false) {
 import React, { useState, useEffect } from "react";
 import dayjs from "dayjs";
 import { fetchTodaySchedule } from "./scheduleAPI.js";
-import { getEventStyle } from "./eventStyle.js"; // for appointments
+import { getEventStyle } from "./eventStyle.js";
 import {
   dayStart,
   START_HOUR,
@@ -854,6 +1370,7 @@ import "./Schedule.css";
 import TimeBlock from "./TimeBlock.jsx";
 import BlockEditor from "./BlockEditor";
 import axiosInstance from "../axiosInstance";
+import CalendarEmailManager from "../CalendarEmailManager";
 
 function Schedule() {
   const [appointments, setAppointments] = useState([]);
@@ -862,20 +1379,26 @@ function Schedule() {
   const [error, setError] = useState("");
   const [editBlock, setEditBlock] = useState(null);
 
-  function handleEditBlock(block) {
-    setEditBlock(block);
-  }
-
-  // Function to "refetch" schedule data after updates
+  // ----------------------------
+  //  Fetch the schedule data
+  // ----------------------------
   async function loadData() {
     try {
       setLoading(true);
       setError("");
       const data = await fetchTodaySchedule();
-      console.log("Schedule data from backend:", data); // <-- Add this
+      console.log("Schedule data from backend:", data);
+
       if (data.success) {
-        setAppointments(data.appointments || []);
-        setTimeBlocks(data.timeBlocks || []);
+        // If no verified emails
+        if (data.verified === false) {
+          setError("No verified calendar emails found. Please verify or add an email.");
+          setAppointments([]);
+          setTimeBlocks([]);
+        } else {
+          setAppointments(data.appointments || []);
+          setTimeBlocks(data.timeBlocks || []);
+        }
       } else {
         setError(data.message || "Failed to load schedule.");
       }
@@ -887,15 +1410,46 @@ function Schedule() {
     }
   }
 
+  // Load data on mount
   useEffect(() => {
     console.log("Schedule component mounted. Loading data...");
     loadData();
   }, []);
 
-  if (loading) return <div>Loading schedule...</div>;
-  if (error) return <div style={{ color: "red" }}>Error: {error}</div>;
+  function handleEditBlock(block) {
+    setEditBlock(block);
+  }
 
-  // Build the day column grid lines...
+  // Approve all unapproved blocks
+  async function handleApproveAll() {
+    try {
+      const { data } = await axiosInstance.post("/api/freedom-blocks/approveAll");
+      if (!data.success) {
+        alert("Error approving blocks: " + data.message);
+      } else {
+        loadData(); // refresh
+      }
+    } catch (err) {
+      alert("Network error approving blocks");
+      console.error(err);
+    }
+  }
+
+  if (loading) return <div>Loading schedule...</div>;
+
+  // If there's an error, we still show the CalendarEmailManager so the user can verify
+  if (error) {
+    return (
+      <div style={{ color: "red" }}>
+        <p>{error}</p>
+        <CalendarEmailManager 
+          onCalendarUpdate={loadData} // <--- pass the prop here
+        />
+      </div>
+    );
+  }
+
+  // Build the day column grid lines
   const totalMinutes = (END_HOUR - START_HOUR) * 60;
   const totalSlots = totalMinutes / MINUTES_PER_SLOT;
   const containerHeight = totalSlots * ROW_HEIGHT_PX;
@@ -908,46 +1462,28 @@ function Schedule() {
     current = current.add(MINUTES_PER_SLOT, "minute");
   }
 
-  // Approve button: calls the /approveAll route using Axios
-  async function handleApproveAll() {
-    try {
-      const { data } = await axiosInstance.post("/api/freedom-blocks/approveAll");
-      if (!data.success) {
-        alert("Error approving blocks: " + data.message);
-      } else {
-        // triggers phone alarms or TaskMagic on server side, then refetch
-        loadData();
-      }
-    } catch (err) {
-      alert("Network error approving blocks");
-      console.error(err);
-    }
-  }
-  console.log("Schedule: top-level log");
-
   return (
     <div className="schedule-container">
       <h2>Today's Schedule</h2>
 
-      {/* Approve button (only if we have unapproved blocks) */}
+      {/* Email Manager always shown; pass down a callback for re-fetching */}
+      <CalendarEmailManager onCalendarUpdate={loadData} />
+
+      {/* Show Approve button if unapproved blocks exist */}
       {timeBlocks.some((b) => !b.approved) && (
         <button onClick={handleApproveAll}>Approve All Blocks</button>
       )}
 
       <hr className="day-column-divider" />
 
-      {/* Day column */}
       <div className="day-column-outer">
-        {/* Inner wrapper sized to "containerHeight" */}
         <div className="day-column-inner" style={{ height: containerHeight }}>
-          {/* Grid lines */}
           {gridLines.map((line, idx) => (
             <div key={idx} className="schedule-grid-line" style={{ top: line.top }}>
               <span className="schedule-grid-line-label">{line.label}</span>
             </div>
           ))}
 
-          {/* Appointments (visual only, not draggable) */}
           {appointments.map((appt, idx) => {
             const style = getEventStyle(appt.start?.dateTime, appt.end?.dateTime, true);
             return (
@@ -964,7 +1500,6 @@ function Schedule() {
             );
           })}
 
-          {/* Draggable Time Blocks */}
           {timeBlocks.map((block) => (
             <TimeBlock
               key={block._id}
