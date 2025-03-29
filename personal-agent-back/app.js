@@ -4,9 +4,9 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const fileUpload = require("express-fileupload");
-const session = require("express-session"); // Import express-session
+const session = require("express-session");
 const { isAuthenticated } = require('./middleware/auth');
-
+const isProduction = process.env.NODE_ENV === 'production';
 
 // Routers
 const freedomRouter = require("./routes/freedom.routes");
@@ -39,12 +39,14 @@ app.use(isAuthenticated);
 
 // Set up session middleware
 app.use(session({
-  secret: process.env.SESSION_SECRET, // secure secret value
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false, // set to true if you use HTTPS in production
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days in milliseconds
+    secure: isProduction, 
+    httpOnly: true,
+    sameSite: isProduction ? 'strict' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000
   }
 }));
 
