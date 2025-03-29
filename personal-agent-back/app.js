@@ -5,6 +5,7 @@ const express = require("express");
 const cors = require("cors");
 const fileUpload = require("express-fileupload");
 const session = require("express-session"); // Import express-session
+const { isAuthenticated } = require('./middleware/auth');
 
 
 // Routers
@@ -34,6 +35,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(fileUpload());
+app.use(isAuthenticated);
 
 // Set up session middleware
 app.use(session({

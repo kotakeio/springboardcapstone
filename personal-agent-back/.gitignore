@@ -1,4 +1,5 @@
+node_modules
 .env
-config\service-account.json
+config/service-account.json
 copy.code.js
 combined_code.txt
