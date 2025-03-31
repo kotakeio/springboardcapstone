@@ -6,7 +6,6 @@ const cors = require("cors");
 const fileUpload = require("express-fileupload");
 const session = require("express-session");
 const isProduction = process.env.NODE_ENV === 'production';
-const path = require('path');
 
 // Routers
 const freedomRouter = require("./routes/freedom.routes");
@@ -15,13 +14,12 @@ const userRouter = require("./routes/user.routes");
 const app = express();
 
 const allowedOrigins = [
-  "http://localhost:5173",      // local Vite dev server
+  "http://localhost:5173",
   "https://springboardcapstone-bzjm.onrender.com" 
 ];
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
@@ -35,7 +33,6 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(fileUpload());
-app.use(express.static(path.join(__dirname, '../personal-agent-front/dist')));
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
@@ -50,9 +47,8 @@ app.use(session({
 app.use("/api/freedom-blocks", freedomRouter);
 app.use("/api/users", userRouter);
 
-// Optionally, a simple test route
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../personal-agent-front/dist', 'index.html'));
+app.get("/", (req, res) => {
+  res.send("Hello from AI Agents Backend!");
 });
 
 module.exports = app;
