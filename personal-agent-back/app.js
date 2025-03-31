@@ -6,6 +6,7 @@ const cors = require("cors");
 const fileUpload = require("express-fileupload");
 const session = require("express-session");
 const isProduction = process.env.NODE_ENV === 'production';
+const path = require('path');
 
 // Routers
 const freedomRouter = require("./routes/freedom.routes");
@@ -34,8 +35,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(fileUpload());
-
-// Set up session middleware
+app.use(express.static(path.join(__dirname, 'build')));
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
@@ -47,14 +47,12 @@ app.use(session({
     maxAge: 7 * 24 * 60 * 60 * 1000
   }
 }));
-
-// Our route handlers
 app.use("/api/freedom-blocks", freedomRouter);
 app.use("/api/users", userRouter);
 
 // Optionally, a simple test route
-app.get("/", (req, res) => {
-  res.send("Hello from AI Agents Backend!");
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 
 module.exports = app;
