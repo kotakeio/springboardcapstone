@@ -1,8 +1,11 @@
+// src\CalendarEmailManager.jsx
+
 import React, { useState, useEffect } from "react";
 import axiosInstance from "./axiosInstance";
 
 function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
   const [emails, setEmails] = useState([]);
+  // Initialize statusMessage as an empty string. It can now hold either text or JSX.
   const [statusMessage, setStatusMessage] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -18,12 +21,10 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
       const { data } = await axiosInstance.get("/api/users/calendarEmails");
       if (data.success) {
         setEmails(data.emails);
-
         // Update parent's email list if needed
         if (onEmailsUpdated) {
           onEmailsUpdated(data.emails);
         }
-
         // Accordion auto-open/close logic
         const hasVerified = data.emails.some((e) => e.isCalendarOnboarded);
         setIsAccordionOpen(!hasVerified);
@@ -38,7 +39,6 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
 
   useEffect(() => {
     fetchEmails();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ----------------------------
@@ -52,6 +52,7 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
   //  Handle Verification
   // ----------------------------
   async function handleVerify(emailId) {
+    // Clear previous status message
     setStatusMessage("");
     try {
       const { data } = await axiosInstance.post(
@@ -59,20 +60,67 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
       );
       if (data.success) {
         setStatusMessage("Verified email: " + data.userEmail.email);
-        // Refresh emails
+        // Refresh emails and calendar schedule
         fetchEmails();
-
-        // ALSO re-fetch the schedule
         if (onCalendarUpdate) {
           onCalendarUpdate();
         }
       } else {
-        setStatusMessage(formatVerificationError(data.message));
+        // Replace error message with calendar sharing instructions
+        setStatusMessage(
+          <>
+            <h2>Calendar Sharing Setup</h2>
+            <p>
+              To allow our app to access your Google Calendar, please share your
+              calendar with our service account email:{" "}
+              <strong>
+                agent-692@pc-api-6250374257814573220-956.iam.gserviceaccount.com
+              </strong>
+            </p>
+            <ol>
+              <li>Open Google Calendar &amp; locate the calendar you want to share.</li>
+              <li>Go to Settings and sharing.</li>
+              <li>Click "Share with specific people".</li>
+              <li>
+                Add{" "}
+                <strong>
+                  agent-692@pc-api-6250374257814573220-956.iam.gserviceaccount.com
+                </strong>{" "}
+                with "Make changes to events".
+              </li>
+              <li>Save changes.</li>
+            </ol>
+          </>
+        );
       }
     } catch (err) {
       console.error(err);
       if (err.response && err.response.data && err.response.data.message) {
-        setStatusMessage(formatVerificationError(err.response.data.message));
+        setStatusMessage(
+          <>
+            <h2>Calendar Sharing Setup</h2>
+            <p>
+              To allow our app to access your Google Calendar, please share your
+              calendar with our service account email:{" "}
+              <strong>
+                agent-692@pc-api-6250374257814573220-956.iam.gserviceaccount.com
+              </strong>
+            </p>
+            <ol>
+              <li>Open Google Calendar &amp; locate the calendar you want to share.</li>
+              <li>Go to Settings and sharing.</li>
+              <li>Click "Share with specific people".</li>
+              <li>
+                Add{" "}
+                <strong>
+                  agent-692@pc-api-6250374257814573220-956.iam.gserviceaccount.com
+                </strong>{" "}
+                with "Make changes to events".
+              </li>
+              <li>Save changes.</li>
+            </ol>
+          </>
+        );
       } else {
         setStatusMessage("Network error verifying email");
       }
@@ -102,7 +150,6 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
       if (data.success) {
         setStatusMessage(`Deleted email: ${email}`);
         fetchEmails();
-        // Possibly re-fetch the schedule if needed
         if (onCalendarUpdate) {
           onCalendarUpdate();
         }
@@ -117,27 +164,6 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
       setEmailToDelete(null);
     }
   }
-
-  // ----------------------------
-  //  Format Verification Errors
-  // ----------------------------
-  function formatVerificationError(rawMessage) {
-    let email = "";
-    const emailMatch = rawMessage.match(/for\s+([^:]+):/);
-    if (emailMatch) {
-      email = emailMatch[1].trim();
-    }
-    let reason = "";
-    const reasonMatch = rawMessage.match(/"reason":"([^"]+)"/);
-    if (reasonMatch) {
-      reason = reasonMatch[1];
-    }
-    if (email && reason) {
-      return `Verification failed for ${email} (${reason})`;
-    }
-    return `Verification failed: ${rawMessage}`;
-  }
-
   // ----------------------------
   //  Handle Adding a New Email
   // ----------------------------
@@ -154,8 +180,6 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
         setNewEmail("");
         setIsAddModalOpen(false);
         fetchEmails();
-
-        // Re-fetch schedule to see new email's effect
         if (onCalendarUpdate) {
           onCalendarUpdate();
         }
@@ -244,13 +268,16 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
 
           {/* Status Message */}
           {statusMessage && (
-            <p style={{ color: "#1E90FF", marginTop: "0.5rem" }}>
+            <div style={{ color: "#1E90FF", marginTop: "0.5rem" }}>
               {statusMessage}
-            </p>
+            </div>
           )}
 
           {/* Add Email Button */}
-          <button onClick={() => setIsAddModalOpen(true)} style={{ marginTop: "1rem" }}>
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            style={{ marginTop: "1rem" }}
+          >
             Add Email
           </button>
         </>
@@ -349,7 +376,11 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
               <strong>{emailToDelete.email}</strong>?
             </p>
             <div
-              style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "0.5rem",
+              }}
             >
               <button
                 onClick={handleConfirmDelete}
