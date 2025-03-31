@@ -35,7 +35,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(fileUpload());
-app.use(express.static(path.join(__dirname, 'build')));
+app.use(express.static(path.join(__dirname, '../personal-agent-front/dist')));
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
@@ -52,7 +52,7 @@ app.use("/api/users", userRouter);
 
 // Optionally, a simple test route
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'build', 'index.html'));
+  res.sendFile(path.join(__dirname, '../personal-agent-front/dist', 'index.html'));
 });
 
 module.exports = app;
