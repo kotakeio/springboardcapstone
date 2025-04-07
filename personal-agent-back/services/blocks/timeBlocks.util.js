@@ -43,6 +43,7 @@ function breakDownFreeTime(freeIntervals) {
   const blocks = [];
 
   freeIntervals.forEach((interval) => {
+    console.log("Type of interval.start:", typeof interval.start, interval.start);
     let pointer = roundToHalfHour(interval.start);
 
     // If pointer is exactly on :30 for the first block => 25 min, then round up to next hour

@@ -47,7 +47,7 @@ function App() {
   }, [setUser]);
 
   if (!isAuthChecked) {
-    return <div>Loading...</div>;
+    return <div>Loading Agents...</div>;
   }
 
   // Logout function: clears token and resets state

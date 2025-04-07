@@ -15,7 +15,10 @@ const phoneAlarmService = require("../services/phoneAlarm.service");
 
 // Utility function for delay
 function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref(); // Allow the process to exit if this is the only active timer
+  });
 }
 
 /**

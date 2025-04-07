@@ -16,12 +16,28 @@ import BlockEditor from "./BlockEditor";
 import axiosInstance from "../axiosInstance";
 import CalendarEmailManager from "../CalendarEmailManager";
 
+// Helper delay function.
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Spinner style used for the Approve button.
+const spinnerStyle = {
+  width: "16px",
+  height: "16px",
+  border: "2px solid #f3f3f3",
+  borderTop: "2px solid #00e1ff",
+  borderRadius: "50%",
+  animation: "spin 1s linear infinite",
+  display: "inline-block",
+  marginRight: "0.5rem",
+};
+
 function Schedule() {
   const [appointments, setAppointments] = useState([]);
   const [timeBlocks, setTimeBlocks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editBlock, setEditBlock] = useState(null);
+  const [isApproving, setIsApproving] = useState(false);
 
   // ----------------------------
   //  Fetch the schedule data
@@ -64,36 +80,42 @@ function Schedule() {
     setEditBlock(block);
   }
 
-  // Approve all unapproved blocks
+  // Approve all unapproved blocks with minimum 3 second delay and loading state.
   async function handleApproveAll() {
+    setIsApproving(true);
+    const startTime = Date.now();
     try {
       const { data } = await axiosInstance.post("/api/freedom-blocks/approveAll");
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 3000) {
+        await delay(3000 - elapsed);
+      }
       if (!data.success) {
         alert("Error approving blocks: " + data.message);
       } else {
-        loadData(); // refresh
+        loadData(); // refresh schedule data
       }
     } catch (err) {
       alert("Network error approving blocks");
       console.error(err);
+    } finally {
+      setIsApproving(false);
     }
   }
 
   if (loading) return <div>Loading schedule...</div>;
 
-  // If there's an error, we still show the CalendarEmailManager so the user can verify
+  // If there's an error, still show the CalendarEmailManager so the user can verify
   if (error) {
     return (
       <div style={{ color: "red" }}>
         <p>{error}</p>
-        <CalendarEmailManager 
-          onCalendarUpdate={loadData} // <--- pass the prop here
-        />
+        <CalendarEmailManager onCalendarUpdate={loadData} />
       </div>
     );
   }
 
-  // Build the day column grid lines
+  // Build the day column grid lines.
   const totalMinutes = (END_HOUR - START_HOUR) * 60;
   const totalSlots = totalMinutes / MINUTES_PER_SLOT;
   const containerHeight = totalSlots * ROW_HEIGHT_PX;
@@ -110,12 +132,21 @@ function Schedule() {
     <div className="schedule-container">
       <h2>Today's Schedule</h2>
 
-      {/* Email Manager always shown; pass down a callback for re-fetching */}
+      {/* Calendar Email Manager always shown; pass down a callback for re-fetching */}
       <CalendarEmailManager onCalendarUpdate={loadData} />
 
-      {/* Show Approve button if unapproved blocks exist */}
+      {/* Approve All Blocks button, showing a spinner when in loading state */}
       {timeBlocks.some((b) => !b.approved) && (
-        <button onClick={handleApproveAll}>Approve All Blocks</button>
+        <button onClick={handleApproveAll} disabled={isApproving}>
+          {isApproving ? (
+            <>
+              <div style={spinnerStyle} />
+              Approving Blocks...
+            </>
+          ) : (
+            "Approve All Blocks"
+          )}
+        </button>
       )}
 
       <hr className="day-column-divider" />
@@ -162,6 +193,13 @@ function Schedule() {
           />
         )}
       </div>
+      {/* Inline keyframes for spinner animation */}
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }

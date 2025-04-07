@@ -38,7 +38,7 @@ function TimeBlock({ block, onUpdate, onEdit }) {
 
   // 3) Local state for RND
   const [position, setPosition] = useState({ x: 100, y: topPx });
-  const [size, setSize]         = useState({ width: 200, height: heightPx });
+  const [size, setSize]         = useState({ width: 275, height: heightPx });
   const [hoverTime, setHoverTime] = useState("");
 
   // 4) Style based on approved vs. unapproved
