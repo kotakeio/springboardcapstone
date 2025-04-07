@@ -1,10 +1,10 @@
-// app.js
 require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
 const fileUpload = require("express-fileupload");
 const session = require("express-session");
+const path = require("path");
 const isProduction = process.env.NODE_ENV === 'production';
 
 // Routers
@@ -15,7 +15,7 @@ const app = express();
 
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://springboardcapstone-bzjm.onrender.com" 
+  "https://springboardcapstone-bzjm.onrender.com"
 ];
 
 const corsOptions = {
@@ -44,11 +44,26 @@ app.use(session({
     maxAge: 7 * 24 * 60 * 60 * 1000
   }
 }));
+
+// API routes
 app.use("/api/freedom-blocks", freedomRouter);
 app.use("/api/users", userRouter);
 
+// Default root route.
 app.get("/", (req, res) => {
   res.send("Hello from AI Agents Backend!");
 });
+
+// If in production, serve static assets from the 'build' directory.
+// This will allow direct access to any URL (e.g., /schedule) to load the React app.
+if (isProduction) {
+  app.use(express.static(path.join(__dirname, "build")));
+  
+  // The catch-all handler: for any request that doesn't match an API route,
+  // send back React's index.html file.
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "build", "index.html"));
+  });
+}
 
 module.exports = app;
