@@ -1,5 +1,17 @@
 {
   "dependencies": {
     "mongoose": "^8.12.1"
-  }
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "mongodb-memory-server": "^10.1.4",
+    "supertest": "^7.1.0"
+  },
+  "scripts": {
+    "test": "jest"
+  },
+"jest": {
+  "setupFiles": ["<rootDir>/jest.setup.js"],
+  "globalTeardown": "<rootDir>/jest.teardown.js"
+}
 }

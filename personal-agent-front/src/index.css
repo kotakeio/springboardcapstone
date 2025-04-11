@@ -22,11 +22,6 @@ a:hover {
   color: #535bf2;
 }
 
-/* 
-  1) Use flexbox on body to center everything:
-  2) Align and justify in the center,
-     ensuring the entire page is centered horizontally & vertically.
-*/
 body {
   margin: 0;
   display: flex;
@@ -35,7 +30,7 @@ body {
   justify-content: flex-start;
   min-width: 320px;
   min-height: 100vh;
-  padding-top: 60px;
+  padding-top: 20px;
 }
 
 #root {
@@ -84,7 +79,6 @@ button:focus-visible {
 }
 /* Disable page scroll */
 html, body {
-  margin-top: 1rem;
   padding: 0;
   overflow: hidden; /* no scrollbars for the entire page */
   height: 100vh;    /* let’s have it fill the viewport */

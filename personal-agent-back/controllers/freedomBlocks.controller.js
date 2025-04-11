@@ -15,7 +15,10 @@ const phoneAlarmService = require("../services/phoneAlarm.service");
 
 // Utility function for delay
 function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref(); // Allow the process to exit if this is the only active timer
+  });
 }
 
 /**
@@ -105,10 +108,7 @@ async function getTodaySchedule(req, res) {
     const startOfDay = dayjs(`${dateToday} 00:00`, "YYYY-MM-DD HH:mm").tz("America/Denver").toDate();
     const endOfDay = dayjs(`${dateToday} 23:59`, "YYYY-MM-DD HH:mm").tz("America/Denver").toDate();
 
-    console.log("Start of day:", startOfDay);
-    console.log("End of day:", endOfDay);
-
-    // Retrieve existing blocks from MongoDB
+    // Fetch existing blocks
     let existingBlocks = await freedomTimeBlocks.find({
       startTime: { $gte: startOfDay },
       endTime: { $lte: endOfDay }
@@ -117,28 +117,51 @@ async function getTodaySchedule(req, res) {
     const userEmails = await UserEmail.find({ userId: req.user._id, deletedAt: null });
     // Filter for verified emails only
     const verifiedEmails = userEmails.filter(ue => ue.isCalendarOnboarded);
+
+    // Instead of immediately returning if no verified emails, we always show the calendar.
     if (verifiedEmails.length === 0) {
+      // Return a sample appointment response if no emails are verified.
+      const sampleAppointment = {
+        id: "sample",
+        summary: "Sample Appointment",
+        start: dayjs().hour(10).minute(0).toISOString(),
+        end: dayjs().hour(10).minute(30).toISOString(),
+      };
       return res.json({
         success: true,
         verified: false,
-        message: "No verified calendar emails. Please verify or add a calendar email.",
-        emails: userEmails
+        message: "Please verify your calendar email(s) to unlock full features.",
+        appointments: [sampleAppointment],
+        timeBlocks: []
       });
     }
+
     const calendarIds = verifiedEmails.map(ue => ue.email);
 
-    // If no blocks exist, generate them using verified emails
-    if (existingBlocks.length === 0) {
+    //—New logic: If there exist unapproved freedom blocks, re-calculate them.
+    if (existingBlocks.length > 0) {
+      const unapprovedBlocks = existingBlocks.filter(block => !block.approved);
+      if (unapprovedBlocks.length > 0) {
+        // Hard-delete the unapproved blocks
+        await freedomTimeBlocks.deleteMany({
+          _id: { $in: unapprovedBlocks.map(b => b._id) }
+        });
+        console.log("Unapproved freedom blocks deleted for regeneration.");
+        // After deletion, generate fresh blocks
+        await generateTodayBlocksIfNeeded(calendarIds);
+      }
+    } else {
+      // If no blocks exist, generate them.
       await generateTodayBlocksIfNeeded(calendarIds);
     }
 
-    // Query again for today's blocks
+    // Query again for today's blocks after potential regeneration.
     const todayBlocks = await freedomTimeBlocks.find({
       startTime: { $gte: startOfDay },
       endTime: { $lte: endOfDay }
     }).sort({ startTime: 1 });
 
-    // Fetch today's appointments from Google for each verified email
+    // Fetch today's appointments from Google for each verified email.
     let allAppointments = [];
     for (const calId of calendarIds) {
       const appts = await listAppointments(calId, startOfDay, endOfDay);
@@ -148,7 +171,7 @@ async function getTodaySchedule(req, res) {
     return res.json({
       success: true,
       verified: true,
-      message: "Fetched today's schedule (appointments + time blocks).",
+      message: "Fetched today's schedule with updated freedom blocks.",
       appointments: allAppointments,
       timeBlocks: todayBlocks,
       emails: userEmails

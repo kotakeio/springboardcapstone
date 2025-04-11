@@ -1,17 +1,23 @@
-// src\CalendarEmailManager.jsx
+// src/CalendarEmailManager.jsx
 
 import React, { useState, useEffect } from "react";
 import axiosInstance from "./axiosInstance";
 
+// Delay helper function
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
   const [emails, setEmails] = useState([]);
-  // Initialize statusMessage as an empty string. It can now hold either text or JSX.
   const [statusMessage, setStatusMessage] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [emailToDelete, setEmailToDelete] = useState(null);
   const [isAccordionOpen, setIsAccordionOpen] = useState(false);
+
+  // New state for loading actions
+  const [verifyingEmailId, setVerifyingEmailId] = useState(null);
+  const [isAddingEmail, setIsAddingEmail] = useState(false);
 
   // ----------------------------
   //  Fetch Emails on Mount
@@ -21,11 +27,9 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
       const { data } = await axiosInstance.get("/api/users/calendarEmails");
       if (data.success) {
         setEmails(data.emails);
-        // Update parent's email list if needed
         if (onEmailsUpdated) {
           onEmailsUpdated(data.emails);
         }
-        // Accordion auto-open/close logic
         const hasVerified = data.emails.some((e) => e.isCalendarOnboarded);
         setIsAccordionOpen(!hasVerified);
       } else {
@@ -49,24 +53,27 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
   }
 
   // ----------------------------
-  //  Handle Verification
+  //  Handle Verification with Minimum Delay
   // ----------------------------
   async function handleVerify(emailId) {
-    // Clear previous status message
     setStatusMessage("");
+    setVerifyingEmailId(emailId);
+    const startTime = Date.now();
     try {
       const { data } = await axiosInstance.post(
         `/api/users/calendarEmails/${emailId}/verify`
       );
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 3000) {
+        await delay(3000 - elapsed);
+      }
       if (data.success) {
         setStatusMessage("Verified email: " + data.userEmail.email);
-        // Refresh emails and calendar schedule
         fetchEmails();
         if (onCalendarUpdate) {
           onCalendarUpdate();
         }
       } else {
-        // Replace error message with calendar sharing instructions
         setStatusMessage(
           <>
             <h2>Calendar Sharing Setup</h2>
@@ -95,7 +102,11 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
       }
     } catch (err) {
       console.error(err);
-      if (err.response && err.response.data && err.response.data.message) {
+      if (
+        err.response &&
+        err.response.data &&
+        err.response.data.message
+      ) {
         setStatusMessage(
           <>
             <h2>Calendar Sharing Setup</h2>
@@ -124,6 +135,44 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
       } else {
         setStatusMessage("Network error verifying email");
       }
+    } finally {
+      setVerifyingEmailId(null);
+    }
+  }
+
+  // ----------------------------
+  //  Handle Adding a New Email with Minimum Delay
+  // ----------------------------
+  async function handleAddEmail(e) {
+    e.preventDefault();
+    if (!newEmail) return;
+    setStatusMessage("");
+    setIsAddingEmail(true);
+    const startTime = Date.now();
+    try {
+      const { data } = await axiosInstance.post("/api/users/calendarEmails", {
+        email: newEmail,
+      });
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 3000) {
+        await delay(3000 - elapsed);
+      }
+      if (data.success) {
+        setStatusMessage("Added new email!");
+        setNewEmail("");
+        setIsAddModalOpen(false);
+        fetchEmails();
+        if (onCalendarUpdate) {
+          onCalendarUpdate();
+        }
+      } else {
+        setStatusMessage("Error adding email: " + data.message);
+      }
+    } catch (err) {
+      console.error(err);
+      setStatusMessage("Network error adding email");
+    } finally {
+      setIsAddingEmail(false);
     }
   }
 
@@ -162,33 +211,6 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
     } finally {
       setIsDeleteModalOpen(false);
       setEmailToDelete(null);
-    }
-  }
-  // ----------------------------
-  //  Handle Adding a New Email
-  // ----------------------------
-  async function handleAddEmail(e) {
-    e.preventDefault();
-    if (!newEmail) return;
-    setStatusMessage("");
-    try {
-      const { data } = await axiosInstance.post("/api/users/calendarEmails", {
-        email: newEmail,
-      });
-      if (data.success) {
-        setStatusMessage("Added new email!");
-        setNewEmail("");
-        setIsAddModalOpen(false);
-        fetchEmails();
-        if (onCalendarUpdate) {
-          onCalendarUpdate();
-        }
-      } else {
-        setStatusMessage("Error adding email: " + data.message);
-      }
-    } catch (err) {
-      console.error(err);
-      setStatusMessage("Network error adding email");
     }
   }
 
@@ -258,8 +280,28 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
                   <button
                     onClick={() => handleVerify(ue._id)}
                     style={{ marginLeft: "1rem" }}
+                    disabled={verifyingEmailId === ue._id}
                   >
-                    Verify
+                    {verifyingEmailId === ue._id ? (
+                      <>
+                        <div
+                          className="spinner"
+                          style={{
+                            width: "16px",
+                            height: "16px",
+                            border: "2px solid #f3f3f3",
+                            borderTop: "2px solid #00e1ff",
+                            borderRadius: "50%",
+                            animation: "spin 1s linear infinite",
+                            display: "inline-block",
+                            marginRight: "0.5rem",
+                          }}
+                        />
+                        Verifying...
+                      </>
+                    ) : (
+                      "Verify"
+                    )}
                   </button>
                 )}
               </div>
@@ -277,8 +319,28 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
           <button
             onClick={() => setIsAddModalOpen(true)}
             style={{ marginTop: "1rem" }}
+            disabled={isAddingEmail}
           >
-            Add Email
+            {isAddingEmail ? (
+              <>
+                <div
+                  className="spinner"
+                  style={{
+                    width: "16px",
+                    height: "16px",
+                    border: "2px solid #f3f3f3",
+                    borderTop: "2px solid #00e1ff",
+                    borderRadius: "50%",
+                    animation: "spin 1s linear infinite",
+                    display: "inline-block",
+                    marginRight: "0.5rem",
+                  }}
+                />
+                Adding Email...
+              </>
+            ) : (
+              "Add Email"
+            )}
           </button>
         </>
       )}
@@ -324,6 +386,7 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
                   marginBottom: "0.5rem",
                   boxSizing: "border-box",
                 }}
+                disabled={isAddingEmail}
               />
               <div
                 style={{
@@ -332,8 +395,14 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
                   gap: "0.5rem",
                 }}
               >
-                <button type="submit">Submit</button>
-                <button type="button" onClick={() => setIsAddModalOpen(false)}>
+                <button type="submit" disabled={isAddingEmail}>
+                  Submit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  disabled={isAddingEmail}
+                >
                   Cancel
                 </button>
               </div>
@@ -400,6 +469,14 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
           </div>
         </div>
       )}
+
+      {/* Inline keyframes for spinner animation */}
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
