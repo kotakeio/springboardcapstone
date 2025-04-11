@@ -4,7 +4,7 @@
 .schedule-container {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 60px);
+  height: calc(100vh - 20px);
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -14,43 +14,43 @@
   margin-bottom: 1rem;
 }
   
-  /* The "day column" container for appointments/blocks */
-  .day-column-outer {
-    flex: 1;             /* takes the remaining vertical space */
-    overflow-y: auto;    /* vertical scrolling here */
-    overflow-x: hidden;  /* no horizontal scroll */
-    position: relative;  /* you can keep it relative if needed for stacking */
-    max-width: 400px;    /* limit horizontal width if desired */
-    padding: 1rem;
-  }
-  
-  .day-column-divider {
-    width: 100%;         /* fill the entire .day-column-outer */
-    border: none;        /* remove default styling */
-    border-top: 2px solid #ccc; /* your custom line */
-    margin: 1rem;
-  }
+/* The "day column" container for appointments/blocks */
+.day-column-outer {
+  flex: 1;             /* Takes the remaining vertical space */
+  overflow-y: auto;    /* Vertical scrolling here */
+  overflow-x: hidden;  /* No horizontal scroll */
+  position: relative;
+  max-width: 400px;    /* Limit horizontal width if desired */
+  padding: 1rem;
+}
 
-  .day-column-inner {
-    position: relative;
-    width: 100%; /* or 400px if you want a fixed width */
-  }
-  
-  /* A dashed horizontal line for each 15-min timeslot */
-  .schedule-grid-line {
-    position: absolute;
-    left: 0;
-    width: 100%;
-    height: 0; /* line is drawn with border-top */
-    border-top: 1px dashed #444;
-  }
-  
-  /* The time label for each grid line (e.g. "5:00 AM") */
-  .schedule-grid-line-label {
-    position: absolute;
-    left: 0;
-    transform: translateY(-0.6rem);
-    font-size: 0.8rem;
-    color: #ccc;
-  }
-  
+/* Divider line between sections */
+.day-column-divider {
+  width: 100%;
+  border: none;
+  border-top: 2px solid #ccc;
+  margin: 1rem;
+}
+
+.day-column-inner {
+  position: relative;
+  width: 100%; /* or 400px if you want a fixed width */
+}
+
+/* A dashed horizontal line for each 15-min timeslot */
+.schedule-grid-line {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 0; /* line is drawn with border-top */
+  border-top: 1px dashed #444;
+}
+
+/* The time label for each grid line (e.g. "5:00 AM") */
+.schedule-grid-line-label {
+  position: absolute;
+  left: 0;
+  transform: translateY(-0.6rem);
+  font-size: 0.8rem;
+  color: #ccc;
+}

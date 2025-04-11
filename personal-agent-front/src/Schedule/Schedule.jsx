@@ -15,6 +15,7 @@ import TimeBlock from "./TimeBlock.jsx";
 import BlockEditor from "./BlockEditor";
 import axiosInstance from "../axiosInstance";
 import CalendarEmailManager from "../CalendarEmailManager";
+import ProgressBar from "../components/ProgressBar"; // New import
 
 // Helper delay function.
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -39,6 +40,13 @@ function Schedule() {
   const [editBlock, setEditBlock] = useState(null);
   const [isApproving, setIsApproving] = useState(false);
 
+  // Progress bar state, where "Account Created" is always done.
+  const [progressSteps, setProgressSteps] = useState([
+    { label: "Account Created", done: true },
+    { label: "Email Verified", done: false },
+    { label: "Calendar Setup", done: false },
+  ]);
+
   // ----------------------------
   //  Fetch the schedule data
   // ----------------------------
@@ -50,12 +58,25 @@ function Schedule() {
       console.log("Schedule data from backend:", data);
 
       if (data.success) {
-        // If no verified emails
+        // Update progress steps based on whether emails are verified and appointments exist
         if (data.verified === false) {
+          // If no verified emails, mark second and third step as pending.
+          setProgressSteps([
+            { label: "Account Created", done: true },
+            { label: "Email Verified", done: false },
+            { label: "Calendar Setup", done: false },
+          ]);
           setError("No verified calendar emails found. Please verify or add an email.");
           setAppointments([]);
           setTimeBlocks([]);
         } else {
+          // Email verified; mark step two as done.
+          // Also mark "Calendar Setup" as done if there are real appointments (i.e. not a sample).
+          setProgressSteps([
+            { label: "Account Created", done: true },
+            { label: "Email Verified", done: true },
+            { label: "Calendar Setup", done: (data.appointments && data.appointments.length > 0) ? true : false },
+          ]);
           setAppointments(data.appointments || []);
           setTimeBlocks(data.timeBlocks || []);
         }
@@ -131,6 +152,9 @@ function Schedule() {
   return (
     <div className="schedule-container">
       <h2>Today's Schedule</h2>
+
+      {/* Progress Bar shown at the top until all steps are done */}
+      <ProgressBar steps={progressSteps} />
 
       {/* Calendar Email Manager always shown; pass down a callback for re-fetching */}
       <CalendarEmailManager onCalendarUpdate={loadData} />

@@ -3,7 +3,7 @@
   /* margin: 0 auto;  <-- no longer needed for horizontal centering 
                           since the body already centers #root. */
   padding: 2rem;
-  text-align: center; /* keeps text itself centered */
+  text-align: center;
 }
 
 .logo {
