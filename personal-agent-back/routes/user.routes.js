@@ -1,28 +1,62 @@
-// routes/user.routes.js
-require("dotenv").config();
+// ------------------------------------------------------------------
+// Module:    routes/user.routes.js
+// Author:    John Gibson
+// Created:   2025-04-21
+// Purpose:   Defines user auth, calendar email management, timezone update,
+//            and profile endpoints using JWT & Express.
+// ------------------------------------------------------------------
+
+/**
+ * @module UserRoutes
+ * @description
+ *   - User registration, login, and logout via JWT.
+ *   - CRUD operations for calendar emails and their verification.
+ *   - Timezone updates and profile retrieval.
+ */
+
 const express = require("express");
+require("dotenv").config();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-// Import Mongoose models using capitalized names
 const User = require("../models/user");
 const UserEmail = require("../models/userEmail");
-
 const { isAuthenticated } = require("../middleware/auth");
+
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
 
-// Helper validation functions
+// ─────────────── Helper Functions ───────────────
+
+/**
+ * Validate email format.
+ * @param {string} email  The email to validate.
+ * @returns {boolean}     True if email matches pattern.
+ */
 function validateEmail(email) {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 }
+
+/**
+ * Validate password length.
+ * @param {string} password  The password to validate.
+ * @returns {boolean}        True if password is at least 8 characters.
+ */
 function validatePassword(password) {
   return password.length >= 8;
 }
 
 const router = express.Router();
 
-// POST /api/users/register
+// ─────────────── Routes ───────────────
+
+/**
+ * Register a new user.
+ * @route POST /api/users/register
+ * @param {object} req.body.username   User's email as username.
+ * @param {object} req.body.password   User's plaintext password.
+ * @returns {object}                   JSON with token and user payload.
+ */
 router.post("/register", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -43,45 +77,31 @@ router.post("/register", async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // Create new user with default timezone "UTC" and onboardingCompleted false
-    const newUser = new User({
-      username,
-      passwordHash,
-      timezone: "UTC",
-      onboardingCompleted: false,
-    });
+    // Create user with default settings
+    const newUser = new User({ username, passwordHash, timezone: "UTC", onboardingCompleted: false });
     await newUser.save();
 
-    // Create associated UserEmail record
-    const newUserEmail = new UserEmail({
-      email: username,
-      isCalendarOnboarded: false,
-      userId: newUser._id,
-    });
+    // Associate a calendar email record
+    const newUserEmail = new UserEmail({ email: username, isCalendarOnboarded: false, userId: newUser._id });
     await newUserEmail.save();
 
-    const payload = {
-      _id: newUser._id,
-      username: newUser.username,
-      timezone: newUser.timezone,
-      onboardingCompleted: newUser.onboardingCompleted,
-    };
-
+    const payload = { _id: newUser._id, username: newUser.username, timezone: newUser.timezone, onboardingCompleted: newUser.onboardingCompleted };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
 
-    return res.json({
-      success: true,
-      message: "Account created successfully!",
-      token,
-      user: payload,
-    });
+    return res.json({ success: true, message: "Account created successfully!", token, user: payload });
   } catch (err) {
     console.error("Error in register:", err);
     return res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// POST /api/users/login
+/**
+ * Authenticate an existing user.
+ * @route POST /api/users/login
+ * @param {object} req.body.username
+ * @param {object} req.body.password
+ * @returns {object}               JSON with token and user payload.
+ */
 router.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -102,34 +122,29 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid credentials (password mismatch)" });
     }
 
-    const payload = {
-      _id: foundUser._id,
-      username: foundUser.username,
-      timezone: foundUser.timezone,
-      onboardingCompleted: foundUser.onboardingCompleted,
-    };
-
+    const payload = { _id: foundUser._id, username: foundUser.username, timezone: foundUser.timezone, onboardingCompleted: foundUser.onboardingCompleted };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
 
-    return res.json({
-      success: true,
-      message: "Logged in",
-      token,
-      user: payload,
-    });
+    return res.json({ success: true, message: "Logged in", token, user: payload });
   } catch (err) {
     console.error("Error in login:", err);
     return res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// POST /api/users/logout (protected)
-// With JWT, there is no server-side session to destroy; the client should remove the token.
+/**
+ * Logout a user (client should discard JWT).
+ * @route POST /api/users/logout
+ */
 router.post("/logout", isAuthenticated, (req, res) => {
   return res.json({ success: true, message: "Logged out (remove token on client side)" });
 });
 
-// GET /api/users/calendarEmails
+/**
+ * Get all calendar emails for the authenticated user.
+ * @route GET /api/users/calendarEmails
+ * @returns {object} emails array sorted by creation date.
+ */
 router.get("/calendarEmails", isAuthenticated, async (req, res) => {
   try {
     const userId = req.user._id;
@@ -141,7 +156,12 @@ router.get("/calendarEmails", isAuthenticated, async (req, res) => {
   }
 });
 
-// POST /api/users/calendarEmails - create a new UserEmail record
+/**
+ * Add a new calendar email record.
+ * @route POST /api/users/calendarEmails
+ * @param {object} req.body.email  Email to onboard.
+ * @returns {object}               Created UserEmail document.
+ */
 router.post("/calendarEmails", isAuthenticated, async (req, res) => {
   try {
     const userId = req.user._id;
@@ -149,11 +169,7 @@ router.post("/calendarEmails", isAuthenticated, async (req, res) => {
     if (!email) {
       return res.status(400).json({ success: false, message: "Missing email" });
     }
-    const newEmail = new UserEmail({
-      email,
-      userId,
-      isCalendarOnboarded: false,
-    });
+    const newEmail = new UserEmail({ email, userId, isCalendarOnboarded: false });
     await newEmail.save();
     return res.json({ success: true, userEmail: newEmail });
   } catch (err) {
@@ -162,7 +178,12 @@ router.post("/calendarEmails", isAuthenticated, async (req, res) => {
   }
 });
 
-// POST /api/users/calendarEmails/:emailId/verify - verify the email and set isCalendarOnboarded to true
+/**
+ * Verify a calendar email by querying Google FreeBusy.
+ * @route POST /api/users/calendarEmails/:emailId/verify
+ * @param {string} req.params.emailId  ID of UserEmail record.
+ * @returns {object}                   Verification result and updated record.
+ */
 router.post("/calendarEmails/:emailId/verify", isAuthenticated, async (req, res) => {
   try {
     const userId = req.user._id;
@@ -171,88 +192,60 @@ router.post("/calendarEmails/:emailId/verify", isAuthenticated, async (req, res)
     if (!userEmailRow) {
       return res.status(404).json({ success: false, message: "Email not found for this user" });
     }
-    
-    // Import the calendar client from your service
+
     const { createCalendarClient } = require("../services/calendar/calendarAuth.service");
     const calendar = createCalendarClient();
-    
-    // Set a time window (now until 24 hours later) to test access.
+
+    // Test access window: now → 24h
     const now = new Date().toISOString();
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    const requestBody = {
-      timeMin: now,
-      timeMax: tomorrow,
-      items: [{ id: userEmailRow.email }]
-    };
-    
+    const requestBody = { timeMin: now, timeMax: tomorrow, items: [{ id: userEmailRow.email }] };
+
     let apiResponse;
     try {
       apiResponse = await calendar.freebusy.query({ requestBody });
-      console.log("freeBusy query response:", JSON.stringify(apiResponse.data));
+      // Removed debug console.log
     } catch (apiErr) {
       console.error("freeBusy query error:", apiErr);
-      return res.status(400).json({
-        success: false,
-        message: `Verification failed: calendar access error for ${userEmailRow.email}.`
-      });
+      return res.status(400).json({ success: false, message: `Verification failed: calendar access error for ${userEmailRow.email}.` });
     }
-    
-    const calendarInfo = apiResponse.data.calendars && apiResponse.data.calendars[userEmailRow.email];
+
+    const calendarInfo = apiResponse.data.calendars?.[userEmailRow.email];
     if (!calendarInfo) {
-      return res.status(400).json({
-        success: false,
-        message: `Verification failed: No calendar data returned for ${userEmailRow.email}.`
-      });
+      return res.status(400).json({ success: false, message: `Verification failed: No calendar data returned for ${userEmailRow.email}.` });
     }
-    
     if (calendarInfo.errors) {
       console.error("Calendar info errors:", calendarInfo.errors);
-      return res.status(400).json({
-        success: false,
-        message: `Verification failed for ${userEmailRow.email}: ${JSON.stringify(calendarInfo.errors)}`
-      });
+      return res.status(400).json({ success: false, message: `Verification failed for ${userEmailRow.email}: ${JSON.stringify(calendarInfo.errors)}` });
     }
-    
-    // Use Array.isArray to ensure busy is an array.
     if (Array.isArray(calendarInfo.busy)) {
       userEmailRow.isCalendarOnboarded = true;
       await userEmailRow.save();
-      return res.json({
-        success: true,
-        message: "Calendar verified",
-        userEmail: userEmailRow
-      });
+      return res.json({ success: true, message: "Calendar verified", userEmail: userEmailRow });
     } else {
-      return res.status(400).json({
-        success: false,
-        message: `Verification failed for ${userEmailRow.email}: Unexpected calendar data format.`
-      });
+      return res.status(400).json({ success: false, message: `Verification failed for ${userEmailRow.email}: Unexpected calendar data format.` });
     }
-    
   } catch (err) {
     console.error("Error in POST /calendarEmails/:emailId/verify:", err);
     return res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// DELETE /api/users/calendarEmails/:emailId - hard-delete a userEmail record
+/**
+ * Delete a calendar email record.
+ * @route DELETE /api/users/calendarEmails/:emailId
+ * @param {string} req.params.emailId
+ * @returns {object}               Deletion confirmation.
+ */
 router.delete("/calendarEmails/:emailId", isAuthenticated, async (req, res) => {
   try {
     const userId = req.user._id;
     const { emailId } = req.params;
-
-    // Find the email that belongs to this user
     const userEmailRow = await UserEmail.findOne({ _id: emailId, userId });
     if (!userEmailRow) {
-      return res.status(404).json({
-        success: false,
-        message: "Email not found for this user",
-      });
+      return res.status(404).json({ success: false, message: "Email not found for this user" });
     }
-
-    // Hard-delete by removing it from the collection
     await userEmailRow.deleteOne();
-
     return res.json({ success: true, message: "Email deleted" });
   } catch (err) {
     console.error("Error in DELETE /calendarEmails/:emailId:", err);
@@ -260,7 +253,12 @@ router.delete("/calendarEmails/:emailId", isAuthenticated, async (req, res) => {
   }
 });
 
-// PUT /api/users/timezone - update user's timezone and mark onboarding as complete
+/**
+ * Update user's timezone and complete onboarding.
+ * @route PUT /api/users/timezone
+ * @param {string} req.body.timezone
+ * @returns {object}               Updated user payload.
+ */
 router.put("/timezone", isAuthenticated, async (req, res) => {
   try {
     const userId = req.user._id;
@@ -268,43 +266,35 @@ router.put("/timezone", isAuthenticated, async (req, res) => {
     if (!timezone) {
       return res.status(400).json({ success: false, message: "Timezone is required" });
     }
-    const userData = await User.findById(userId);
-    if (!userData) {
+    const user = await User.findById(userId);
+    if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
-    userData.timezone = timezone;
-    userData.onboardingCompleted = true;
-    await userData.save();
-    return res.json({
-      success: true,
-      message: "Timezone updated and onboarding complete",
-      user: {
-        _id: userData._id,
-        username: userData.username,
-        timezone: userData.timezone,
-        onboardingCompleted: userData.onboardingCompleted,
-      },
-    });
+    user.timezone = timezone;
+    user.onboardingCompleted = true;
+    await user.save();
+    return res.json({ success: true, message: "Timezone updated and onboarding complete", user: { _id: user._id, username: user.username, timezone: user.timezone, onboardingCompleted: user.onboardingCompleted } });
   } catch (err) {
     console.error("Error updating timezone:", err);
     return res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// GET /api/users/me - returns the logged-in user's information
-router.get('/me', isAuthenticated, async (req, res) => {
+/**
+ * Retrieve the authenticated user's profile.
+ * @route GET /api/users/me
+ * @returns {object}               User document.
+ */
+router.get("/me", isAuthenticated, async (req, res) => {
   try {
-    // At this point, req.user is guaranteed to be defined by the middleware.
     const userId = req.user._id;
     const user = await User.findById(userId);
-
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
-
     return res.json({ success: true, user });
   } catch (err) {
-    console.error(err);
+    console.error("Error in GET /me:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });

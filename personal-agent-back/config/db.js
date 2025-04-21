@@ -1,19 +1,47 @@
-// config/db.js
+// ------------------------------------------------------------------
+// Module:    config/db.js
+// Author:    John Gibson
+// Created:   2025-04-21
+// Purpose:   Initialize and export a PostgreSQL connection pool.
+// ------------------------------------------------------------------
 
-// 1) Load environment variables from .env
-require('dotenv').config();
+/**
+ * @module config/db
+ * @description
+ *   - Loads environment variables.
+ *   - Configures and exports a pg.Pool instance for database queries.
+ */
 
-// 2) Import 'pg' package
-const { Pool } = require('pg');
+// ─────────────────────────────────────────────────────────────────
+// Dependencies
+// ─────────────────────────────────────────────────────────────────
 
-// 3) Create a new connection pool to PostgreSQL
+require('dotenv').config(); // Load environment variables from .env.
+
+const { Pool } = require('pg'); // Import the Pool constructor from pg.
+
+// ─────────────────────────────────────────────────────────────────
+// DB Pool Setup
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * PostgreSQL connection pool configured via environment variables.
+ *
+ * @type {import('pg').Pool}
+ */
 const pool = new Pool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
+  host:     process.env.DB_HOST,
+  user:     process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  port: process.env.DB_PORT,
+  port:     process.env.DB_PORT,
 });
 
-// 4) Export the pool so we can query the database elsewhere
+// ─────────────────────────────────────────────────────────────────
+// Exports
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Exported pg.Pool instance for executing database queries.
+ */
 module.exports = pool;

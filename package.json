@@ -1,6 +1,7 @@
 {
   "dependencies": {
-    "mongoose": "^8.12.1"
+    "mongoose": "^8.12.1",
+    "react-joyride": "^2.9.3"
   },
   "devDependencies": {
     "jest": "^29.7.0",
@@ -10,8 +11,10 @@
   "scripts": {
     "test": "jest"
   },
-"jest": {
-  "setupFiles": ["<rootDir>/jest.setup.js"],
-  "globalTeardown": "<rootDir>/jest.teardown.js"
-}
+  "jest": {
+    "setupFiles": [
+      "<rootDir>/jest.setup.js"
+    ],
+    "globalTeardown": "<rootDir>/jest.teardown.js"
+  }
 }

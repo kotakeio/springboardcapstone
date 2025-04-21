@@ -1,222 +1,276 @@
-// src/CalendarEmailManager.jsx
+// ------------------------------------------------------------------
+// Module:    src/CalendarEmailManager.jsx
+// Author:    John Gibson
+// Created:   2025-04-21
+// Purpose:   React component for managing user calendar emails:
+//            fetching, verifying, adding, and deleting.
+// ------------------------------------------------------------------
 
-import React, { useState, useEffect } from "react";
-import axiosInstance from "./axiosInstance";
+/**
+ * @module CalendarEmailManager
+ * @description
+ *   Provides a UI for users to manage their calendar emails:
+ *     - Fetch existing calendar‐shared emails
+ *     - Verify calendar sharing setup
+ *     - Add new emails
+ *     - Delete emails
+ *   Supports both controlled and internal accordion open state,
+ *   and notifies parent components via callbacks.
+ */
 
-// Delay helper function
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// ─────── Dependencies ───────
+import React, { useState, useEffect, useLayoutEffect } from "react"
+import axiosInstance from "./axiosInstance"
 
-function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
-  const [emails, setEmails] = useState([]);
-  const [statusMessage, setStatusMessage] = useState("");
-  const [newEmail, setNewEmail] = useState("");
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [emailToDelete, setEmailToDelete] = useState(null);
-  const [isAccordionOpen, setIsAccordionOpen] = useState(false);
+// ─────── Utilities ───────
 
-  // New state for loading actions
-  const [verifyingEmailId, setVerifyingEmailId] = useState(null);
-  const [isAddingEmail, setIsAddingEmail] = useState(false);
+/**
+ * Pause execution for at least the given number of milliseconds.
+ * Ensures a minimum spinner duration for UX consistency.
+ *
+ * @param {number} ms  Milliseconds to wait.
+ * @returns {Promise<void>}
+ */
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-  // ----------------------------
-  //  Fetch Emails on Mount
-  // ----------------------------
+// ─────── Component Definition ───────
+
+/**
+ * CalendarEmailManager component.
+ *
+ * @param {Object}   props
+ * @param {function(Object[])} props.onEmailsUpdated  Called after emails are fetched.
+ * @param {function()}       props.onCalendarUpdate  Called after verify/add/delete actions.
+ * @param {boolean}          props.forceOpen         If true, accordion remains open.
+ * @param {boolean}         [props.accordionOpen]    Controlled accordion open state.
+ */
+export default function CalendarEmailManager({
+  onEmailsUpdated,
+  onCalendarUpdate,
+  forceOpen,
+  accordionOpen: controlledAccordionOpen,
+}) {
+  // ─────── State ───────
+  const [emails, setEmails] = useState([])
+  const [statusMessage, setStatusMessage] = useState("")
+  const [newEmail, setNewEmail] = useState("")
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [emailToDelete, setEmailToDelete] = useState(null)
+  const [verifyingEmailId, setVerifyingEmailId] = useState(null)
+  const [isAddingEmail, setIsAddingEmail] = useState(false)
+  const [newlyAddedEmailId, setNewlyAddedEmailId] = useState(null)
+
+  // Internal open state if uncontrolled
+  const [internalAccordionOpen, setInternalAccordionOpen] = useState(
+    forceOpen || false
+  )
+  const isAccordionOpen =
+    controlledAccordionOpen !== undefined
+      ? controlledAccordionOpen
+      : internalAccordionOpen
+
+  // ─────── Handlers ───────
+
+  /**
+   * Fetch the list of calendar emails from the server.
+   */
   async function fetchEmails() {
     try {
-      const { data } = await axiosInstance.get("/api/users/calendarEmails");
+      const { data } = await axiosInstance.get("/api/users/calendarEmails")
       if (data.success) {
-        setEmails(data.emails);
-        if (onEmailsUpdated) {
-          onEmailsUpdated(data.emails);
+        setEmails(data.emails)
+        onEmailsUpdated?.(data.emails)
+        // Collapse if any verified email exists when uncontrolled
+        const hasVerified = data.emails.some((e) => e.isCalendarOnboarded)
+        if (controlledAccordionOpen === undefined && !forceOpen) {
+          setInternalAccordionOpen(!hasVerified)
         }
-        const hasVerified = data.emails.some((e) => e.isCalendarOnboarded);
-        setIsAccordionOpen(!hasVerified);
       } else {
-        setStatusMessage("Error fetching emails: " + data.message);
+        setStatusMessage("Error fetching emails: " + data.message)
       }
     } catch (err) {
-      console.error(err);
-      setStatusMessage("Network error fetching emails");
+      console.error(err)
+      setStatusMessage("Network error fetching emails")
     }
   }
 
-  useEffect(() => {
-    fetchEmails();
-  }, []);
-
-  // ----------------------------
-  //  Toggle Accordion
-  // ----------------------------
-  function toggleAccordion() {
-    setIsAccordionOpen(!isAccordionOpen);
-  }
-
-  // ----------------------------
-  //  Handle Verification with Minimum Delay
-  // ----------------------------
+  /**
+   * Verify calendar sharing setup for a given email.
+   * Ensures at least a 3s spinner for a consistent UX.
+   *
+   * @param {string} emailId  ID of the email to verify.
+   */
   async function handleVerify(emailId) {
-    setStatusMessage("");
-    setVerifyingEmailId(emailId);
-    const startTime = Date.now();
+    setStatusMessage("")
+    setVerifyingEmailId(emailId)
+    const startTime = Date.now()
     try {
       const { data } = await axiosInstance.post(
         `/api/users/calendarEmails/${emailId}/verify`
-      );
-      const elapsed = Date.now() - startTime;
-      if (elapsed < 3000) {
-        await delay(3000 - elapsed);
-      }
+      )
+      const elapsed = Date.now() - startTime
+      if (elapsed < 3000) await delay(3000 - elapsed)
+
       if (data.success) {
-        setStatusMessage("Verified email: " + data.userEmail.email);
-        fetchEmails();
-        if (onCalendarUpdate) {
-          onCalendarUpdate();
-        }
+        setStatusMessage("Verified email: " + data.userEmail.email)
+        fetchEmails()
+        onCalendarUpdate?.()
       } else {
         setStatusMessage(
           <>
             <h2>Calendar Sharing Setup</h2>
             <p>
-              To allow our app to access your Google Calendar, please share your
-              calendar with our service account email:{" "}
-              <strong>
-                agent-692@pc-api-6250374257814573220-956.iam.gserviceaccount.com
-              </strong>
+              To allow our app to access your Google Calendar, please share
+              your calendar with our service account email:&nbsp;
+              <strong>agent-692@pc-api-6250374257814573220-956.iam.gserviceaccount.com</strong>
             </p>
             <ol>
-              <li>Open Google Calendar &amp; locate the calendar you want to share.</li>
+              <li>Open Google Calendar &amp; locate the calendar.</li>
               <li>Go to Settings and sharing.</li>
-              <li>Click "Share with specific people".</li>
-              <li>
-                Add{" "}
-                <strong>
-                  agent-692@pc-api-6250374257814573220-956.iam.gserviceaccount.com
-                </strong>{" "}
-                with "Make changes to events".
-              </li>
+              <li>Click “Share with specific people.”</li>
+              <li>Add the service account with “Make changes to events.”</li>
               <li>Save changes.</li>
             </ol>
           </>
-        );
+        )
       }
     } catch (err) {
-      console.error(err);
-      if (
-        err.response &&
-        err.response.data &&
-        err.response.data.message
-      ) {
-        setStatusMessage(
-          <>
-            <h2>Calendar Sharing Setup</h2>
-            <p>
-              To allow our app to access your Google Calendar, please share your
-              calendar with our service account email:{" "}
-              <strong>
-                agent-692@pc-api-6250374257814573220-956.iam.gserviceaccount.com
-              </strong>
-            </p>
-            <ol>
-              <li>Open Google Calendar &amp; locate the calendar you want to share.</li>
-              <li>Go to Settings and sharing.</li>
-              <li>Click "Share with specific people".</li>
-              <li>
-                Add{" "}
-                <strong>
-                  agent-692@pc-api-6250374257814573220-956.iam.gserviceaccount.com
-                </strong>{" "}
-                with "Make changes to events".
-              </li>
-              <li>Save changes.</li>
-            </ol>
-          </>
-        );
-      } else {
-        setStatusMessage("Network error verifying email");
-      }
+      console.error(err)
+      setStatusMessage("Network error verifying email")
     } finally {
-      setVerifyingEmailId(null);
+      setVerifyingEmailId(null)
     }
   }
 
-  // ----------------------------
-  //  Handle Adding a New Email with Minimum Delay
-  // ----------------------------
+  /**
+   * Add a new calendar email via the API.
+   * Maintains a 3s minimum spinner for UX consistency.
+   *
+   * @param {Event} e  Form submission event.
+   */
   async function handleAddEmail(e) {
-    e.preventDefault();
-    if (!newEmail) return;
-    setStatusMessage("");
-    setIsAddingEmail(true);
-    const startTime = Date.now();
+    e.preventDefault()
+    if (!newEmail) return
+    setStatusMessage("")
+    setIsAddingEmail(true)
+    const startTime = Date.now()
     try {
       const { data } = await axiosInstance.post("/api/users/calendarEmails", {
         email: newEmail,
-      });
-      const elapsed = Date.now() - startTime;
-      if (elapsed < 3000) {
-        await delay(3000 - elapsed);
-      }
+      })
+      const elapsed = Date.now() - startTime
+      if (elapsed < 3000) await delay(3000 - elapsed)
+
       if (data.success) {
-        setStatusMessage("Added new email!");
-        setNewEmail("");
-        setIsAddModalOpen(false);
-        fetchEmails();
-        if (onCalendarUpdate) {
-          onCalendarUpdate();
-        }
+        setStatusMessage("Added new email!")
+        setNewEmail("")
+        setIsAddModalOpen(false)
+        setNewlyAddedEmailId(data.email._id)
+        fetchEmails()
+        onCalendarUpdate?.()
       } else {
-        setStatusMessage("Error adding email: " + data.message);
+        setStatusMessage("Error adding email: " + data.message)
       }
     } catch (err) {
-      console.error(err);
-      setStatusMessage("Network error adding email");
+      console.error(err)
+      setStatusMessage("Network error adding email")
     } finally {
-      setIsAddingEmail(false);
+      setIsAddingEmail(false)
     }
   }
 
-  // ----------------------------
-  //  Handle Deletion (Open Modal)
-  // ----------------------------
+  /**
+   * Open the delete confirmation modal for the selected email.
+   *
+   * @param {Object} emailObj  Email object chosen for deletion.
+   */
   function handleOpenDeleteModal(emailObj) {
-    setEmailToDelete(emailObj);
-    setIsDeleteModalOpen(true);
-    setStatusMessage("");
+    setEmailToDelete(emailObj)
+    setIsDeleteModalOpen(true)
+    setStatusMessage("")
   }
 
-  // ----------------------------
-  //  Confirm Deletion
-  // ----------------------------
+  /**
+   * Confirm deletion of the selected email via the API.
+   */
   async function handleConfirmDelete() {
-    if (!emailToDelete) return;
-    const { _id, email } = emailToDelete;
-    setStatusMessage("");
+    if (!emailToDelete) return
+    const { _id, email } = emailToDelete
+    setStatusMessage("")
     try {
       const { data } = await axiosInstance.delete(
         `/api/users/calendarEmails/${_id}`
-      );
+      )
       if (data.success) {
-        setStatusMessage(`Deleted email: ${email}`);
-        fetchEmails();
-        if (onCalendarUpdate) {
-          onCalendarUpdate();
-        }
+        setStatusMessage(`Deleted email: ${email}`)
+        fetchEmails()
+        onCalendarUpdate?.()
       } else {
-        setStatusMessage(`Error deleting email: ${data.message}`);
+        setStatusMessage(`Error deleting email: ${data.message}`)
       }
     } catch (err) {
-      console.error(err);
-      setStatusMessage("Network error deleting email");
+      console.error(err)
+      setStatusMessage("Network error deleting email")
     } finally {
-      setIsDeleteModalOpen(false);
-      setEmailToDelete(null);
+      setIsDeleteModalOpen(false)
+      setEmailToDelete(null)
     }
   }
 
-  // ----------------------------
-  //  Render
-  // ----------------------------
+  // ─────── Effects ───────
+
+  // Fetch emails once on mount
+  useEffect(() => {
+    fetchEmails()
+  }, [])
+
+  // Keep accordion open when forced
+  useLayoutEffect(() => {
+    if (forceOpen) setInternalAccordionOpen(true)
+  }, [forceOpen])
+
+  // Respond to tour events by opening accordion or modals
+  useLayoutEffect(() => {
+    const handler = (e) => {
+      const { target } = e.detail
+      if (
+        target === '[data-tour="verify-email"]' ||
+        target === '[data-tour="add-email"]' ||
+        target === '[data-tour="add-email-input"]'
+      ) {
+        setInternalAccordionOpen(true)
+      }
+      if (target === '[data-tour="confirm-delete-email"]' && emails.length) {
+        handleOpenDeleteModal(emails[0])
+      }
+    }
+    window.addEventListener("tourStepBefore", handler)
+    return () => window.removeEventListener("tourStepBefore", handler)
+  }, [emails])
+
+  // Listen for custom event to open the Add‑Email modal
+  useLayoutEffect(() => {
+    const openModal = () => {
+      setInternalAccordionOpen(true)
+      setIsAddModalOpen(true)
+    }
+    window.addEventListener("openAddEmailModal", openModal)
+    return () => window.removeEventListener("openAddEmailModal", openModal)
+  }, [])
+
+  // ─────── Helpers ───────
+
+  /**
+   * Toggle the accordion when uncontrolled.
+   */
+  function toggleAccordion() {
+    if (controlledAccordionOpen === undefined) {
+      setInternalAccordionOpen((o) => !o)
+    }
+  }
+
+  // ─────── Render ───────
   return (
     <div
       style={{
@@ -228,7 +282,6 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
         marginBottom: "1rem",
       }}
     >
-      {/* Accordion Header */}
       <div
         onClick={toggleAccordion}
         style={{
@@ -242,7 +295,6 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
         <span>{isAccordionOpen ? "▲" : "▼"}</span>
       </div>
 
-      {/* Accordion Content */}
       {isAccordionOpen && (
         <>
           {emails.length === 0 ? (
@@ -257,8 +309,8 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
                   alignItems: "center",
                 }}
               >
-                {/* "X" icon for deletion */}
                 <button
+                  data-tour="delete-email-button"
                   onClick={() => handleOpenDeleteModal(ue)}
                   style={{
                     marginRight: "0.5rem",
@@ -273,212 +325,201 @@ function CalendarEmailManager({ onEmailsUpdated, onCalendarUpdate }) {
                 </button>
                 <span>{ue.email}</span>
                 {ue.isCalendarOnboarded ? (
-                  <span style={{ marginLeft: "1rem", color: "#32CD32" }}>
+                  <span
+                    style={{ marginLeft: "1rem", color: "#32CD32" }}
+                  >
                     Verified
                   </span>
                 ) : (
                   <button
+                    data-tour={
+                      ue._id === newlyAddedEmailId
+                        ? "verify-new-email"
+                        : "verify-email"
+                    }
                     onClick={() => handleVerify(ue._id)}
                     style={{ marginLeft: "1rem" }}
                     disabled={verifyingEmailId === ue._id}
                   >
-                    {verifyingEmailId === ue._id ? (
-                      <>
-                        <div
-                          className="spinner"
-                          style={{
-                            width: "16px",
-                            height: "16px",
-                            border: "2px solid #f3f3f3",
-                            borderTop: "2px solid #00e1ff",
-                            borderRadius: "50%",
-                            animation: "spin 1s linear infinite",
-                            display: "inline-block",
-                            marginRight: "0.5rem",
-                          }}
-                        />
-                        Verifying...
-                      </>
-                    ) : (
-                      "Verify"
-                    )}
+                    {verifyingEmailId === ue._id
+                      ? "Verifying..."
+                      : "Verify"}
                   </button>
                 )}
               </div>
             ))
           )}
 
-          {/* Status Message */}
           {statusMessage && (
-            <div style={{ color: "#1E90FF", marginTop: "0.5rem" }}>
+            <div
+              style={{ color: "#1E90FF", marginTop: "0.5rem" }}
+            >
               {statusMessage}
             </div>
           )}
 
-          {/* Add Email Button */}
           <button
+            data-tour="add-email"
             onClick={() => setIsAddModalOpen(true)}
             style={{ marginTop: "1rem" }}
             disabled={isAddingEmail}
           >
             {isAddingEmail ? (
-              <>
-                <div
-                  className="spinner"
-                  style={{
-                    width: "16px",
-                    height: "16px",
-                    border: "2px solid #f3f3f3",
-                    borderTop: "2px solid #00e1ff",
-                    borderRadius: "50%",
-                    animation: "spin 1s linear infinite",
-                    display: "inline-block",
-                    marginRight: "0.5rem",
-                  }}
-                />
-                Adding Email...
-              </>
+              <div
+                className="spinner"
+                style={{
+                  width: "16px",
+                  height: "16px",
+                  border: "2px solid #f3f3f3",
+                  borderTop: "2px solid #00e1ff",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite",
+                  display: "inline-block",
+                  marginRight: "0.5rem",
+                }}
+              />
             ) : (
               "Add Email"
             )}
           </button>
-        </>
-      )}
 
-      {/* ADD EMAIL MODAL */}
-      {isAddModalOpen && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#444",
-              padding: "1rem",
-              borderRadius: "6px",
-              minWidth: "300px",
-              maxWidth: "400px",
-              width: "90%",
-              color: "#fff",
-              boxSizing: "border-box",
-            }}
-          >
-            <h4 style={{ marginTop: 0 }}>Add a New Email</h4>
-            <form onSubmit={handleAddEmail}>
-              <input
-                type="email"
-                placeholder="Enter email..."
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "0.5rem",
-                  marginBottom: "0.5rem",
-                  boxSizing: "border-box",
-                }}
-                disabled={isAddingEmail}
-              />
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  gap: "0.5rem",
-                }}
-              >
-                <button type="submit" disabled={isAddingEmail}>
-                  Submit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  disabled={isAddingEmail}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* DELETE CONFIRMATION MODAL */}
-      {isDeleteModalOpen && emailToDelete && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#444",
-              padding: "1rem",
-              borderRadius: "6px",
-              minWidth: "300px",
-              maxWidth: "400px",
-              width: "90%",
-              color: "#fff",
-              boxSizing: "border-box",
-            }}
-          >
-            <h4 style={{ marginTop: 0 }}>Delete Email</h4>
-            <p>
-              Are you sure you want to delete:{" "}
-              <strong>{emailToDelete.email}</strong>?
-            </p>
+          {isAddModalOpen && (
             <div
               style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0, 0, 0, 0.5)",
                 display: "flex",
-                justifyContent: "flex-end",
-                gap: "0.5rem",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 9999,
               }}
             >
-              <button
-                onClick={handleConfirmDelete}
-                style={{ backgroundColor: "red", color: "#fff" }}
-              >
-                Yes
-              </button>
-              <button
-                onClick={() => {
-                  setIsDeleteModalOpen(false);
-                  setEmailToDelete(null);
+              <div
+                style={{
+                  backgroundColor: "#444",
+                  padding: "1rem",
+                  borderRadius: "6px",
+                  minWidth: "300px",
+                  maxWidth: "400px",
+                  width: "90%",
+                  color: "#fff",
+                  boxSizing: "border-box",
                 }}
               >
-                Cancel
-              </button>
+                <h4 style={{ marginTop: 0 }}>Add a New Email</h4>
+                <form onSubmit={handleAddEmail}>
+                  <input
+                    data-tour="add-email-input"
+                    type="email"
+                    placeholder="Enter email..."
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem",
+                      marginBottom: "0.5rem",
+                      boxSizing: "border-box",
+                    }}
+                    disabled={isAddingEmail}
+                  />
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      gap: "0.5rem",
+                    }}
+                  >
+                    <button
+                      data-tour="add-email-submit"
+                      type="submit"
+                      disabled={isAddingEmail}
+                    >
+                      Submit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddModalOpen(false)}
+                      disabled={isAddingEmail}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
-          </div>
-        </div>
+          )}
+
+          {isDeleteModalOpen && emailToDelete && (
+            <div
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0, 0, 0, 0.5)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 9999,
+              }}
+            >
+              <div
+                style={{
+                  backgroundColor: "#444",
+                  padding: "1rem",
+                  borderRadius: "6px",
+                  minWidth: "300px",
+                  maxWidth: "400px",
+                  width: "90%",
+                  color: "#fff",
+                  boxSizing: "border-box",
+                }}
+              >
+                <h4 style={{ marginTop: 0 }}>Delete Email</h4>
+                <p>
+                  Are you sure you want to delete:{" "}
+                  <strong>{emailToDelete.email}</strong>?
+                </p>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <button
+                    data-tour="confirm-delete-email"
+                    onClick={handleConfirmDelete}
+                    style={{ backgroundColor: "red", color: "#fff" }}
+                  >
+                    Yes
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsDeleteModalOpen(false)
+                      setEmailToDelete(null)
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <style>{`
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}</style>
+        </>
       )}
-
-      {/* Inline keyframes for spinner animation */}
-      <style>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
-  );
+  )
 }
-
-export default CalendarEmailManager;

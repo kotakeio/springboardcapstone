@@ -1,3 +1,20 @@
+// ------------------------------------------------------------------
+// Module:    TimeBlock.jsx
+// Author:    John Gibson
+// Created:   2025-04-21
+// Purpose:   A draggable, resizable time block component for the schedule UI.
+// ------------------------------------------------------------------
+
+/**
+ * @module TimeBlock
+ * @description
+ *   - Renders a calendar time block that can be dragged & resized on a 5‑minute grid.
+ *   - Persists updates and deletions via scheduleAPI.
+ *   - Includes guided‑tour attributes for drag, resize, edit, and delete steps.
+ */
+
+// ───────────── Dependencies ─────────────
+
 import React, { useState } from "react";
 import { Rnd } from "react-rnd";
 import dayjs from "dayjs";
@@ -12,46 +29,67 @@ import {
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
+
+// ──────────── Utility Functions ────────────
+
 /**
- * Rounds raw minutes to the nearest 5-min boundary.
- * E.g. 12 => 10, 13 => 15, etc.
+ * Snap a raw minute value to the nearest 5‑minute increment.
+ * Ensures all blocks align on 5‑minute boundaries.
+ *
+ * @param {number} rawMinutes
+ * @returns {number}
  */
 function snapTo5MinOffset(rawMinutes) {
   return Math.round(rawMinutes / 5) * 5;
 }
 
-function TimeBlock({ block, onUpdate, onEdit }) {
-  // 1) Convert the block's start/end to dayjs
-  const start = dayjs.utc(block.startTime).tz("America/Denver");
-  const end = dayjs.utc(block.endTime).tz("America/Denver");
+// ──────────── Component: TimeBlock ────────────
 
-  // 2) Calculate initial position & size in px
-  const effectiveStart = start.isBefore(dayStart) ? dayStart : start;
+/**
+ * TimeBlock renders a single calendar block that can be dragged,
+ * resized, edited, or deleted.
+ *
+ * @param {Object} props
+ * @param {{ startTime: string, endTime: string, approved: boolean, _id: string }} props.block
+ * @param {() => void} props.onUpdate   Callback after successful update/delete
+ * @param {(block: Object) => void} props.onEdit   Callback to open edit mode
+ */
+function TimeBlock({ block, onUpdate, onEdit }) {
+  // ─────────── Initialization ───────────
+  // Convert ISO strings into local dayjs instances for Denver timezone.
+  const start = dayjs.utc(block.startTime).tz("America/Denver");
+  const end   = dayjs.utc(block.endTime).tz("America/Denver");
+
+  // Clamp start at dayStart to avoid negative offsets before grid positioning.
+  const effectiveStart     = start.isBefore(dayStart) ? dayStart : start;
   const minutesFromDayStart = effectiveStart.diff(dayStart, "minute");
   const durationMinutes     = end.diff(start, "minute");
 
-  const topPx = (minutesFromDayStart / MINUTES_PER_SLOT) * ROW_HEIGHT_PX;
-  const heightPx = Math.max(
-    (durationMinutes / MINUTES_PER_SLOT) * ROW_HEIGHT_PX,
-    10
-  );
+  const topPx    = (minutesFromDayStart / MINUTES_PER_SLOT) * ROW_HEIGHT_PX;
+  const heightPx = Math.max((durationMinutes / MINUTES_PER_SLOT) * ROW_HEIGHT_PX, 10);
 
-  // 3) Local state for RND
+  // ───────────── State & Styles ─────────────
+  // Manage drag/resize position and display hover label.
   const [position, setPosition] = useState({ x: 100, y: topPx });
-  const [size, setSize]         = useState({ width: 275, height: heightPx });
+  const [size,     setSize]     = useState({ width: 275, height: heightPx });
   const [hoverTime, setHoverTime] = useState("");
 
-  // 4) Style based on approved vs. unapproved
+  // Visual style varies based on approval status.
   const bgColor = block.approved
     ? "rgba(0, 200, 255, 0.7)"
     : "rgba(0, 200, 255, 0.2)";
-  const border  = block.approved ? "none" : "2px solid cyan";
+  const border = block.approved ? "none" : "2px solid cyan";
 
-  // We'll display the block's times in "h:mm A - h:mm A" format
   const blockLabel = `${start.format("h:mm A")} - ${end.format("h:mm A")}`;
 
+  // ─────────── Helper: Grid Alignment ───────────
+
   /**
-   * Helper to convert y-position in px → a dayjs at nearest 5-min
+   * Convert a Y‑pixel value into a snapped dayjs start time.
+   * Aligns to the 5‑minute grid relative to dayStart.
+   *
+   * @param {number} yPx
+   * @returns {dayjs.Dayjs}
    */
   function getSnappedStartTime(yPx) {
     const rawMinutes = (yPx / ROW_HEIGHT_PX) * MINUTES_PER_SLOT;
@@ -59,9 +97,10 @@ function TimeBlock({ block, onUpdate, onEdit }) {
     return dayStart.add(snapped, "minute");
   }
 
-  // ------------------ DRAG ------------------
+  // ─────────── Handlers: Drag ───────────
+
   function handleDrag(e, d) {
-    // As user drags, show a hover label with the new times
+    // Show live preview of new time range during drag.
     const newStart    = getSnappedStartTime(d.y);
     const oldDuration = end.diff(start, "minute");
     const newEnd      = newStart.add(oldDuration, "minute");
@@ -74,7 +113,6 @@ function TimeBlock({ block, onUpdate, onEdit }) {
     const newEnd      = newStart.add(oldDuration, "minute");
 
     try {
-      // Update in DB
       const resp = await updateTimeBlock(
         block._id,
         newStart.toISOString(),
@@ -82,26 +120,25 @@ function TimeBlock({ block, onUpdate, onEdit }) {
       );
       if (!resp.success) {
         alert("Error: " + resp.message);
-        // revert position
-        setPosition({ x: 100, y: topPx });
+        setPosition({ x: 100, y: topPx });  // revert on failure
       } else {
-        // Successfully updated, refetch or update parent
-        onUpdate();
+        onUpdate();  // notify parent to refresh
       }
-    } catch (err) {
-      console.error(err);
-      setPosition({ x: 100, y: topPx });
+    } catch {
+      setPosition({ x: 100, y: topPx });  // revert on exception
+    } finally {
+      setHoverTime("");
     }
-    setHoverTime("");
   }
 
-  // ------------------ RESIZE ------------------
+  // ─────────── Handlers: Resize ───────────
+
   function handleResize(e, direction, ref, delta, pos) {
-    // As user resizes from bottom, show a hover label with the new times
+    // Show live preview of new time range during resize.
     const newHeightPx  = parseFloat(ref.style.height);
     const newStart     = getSnappedStartTime(pos.y);
-    const newDuration  = (newHeightPx / ROW_HEIGHT_PX) * MINUTES_PER_SLOT;
-    const snappedDur   = snapTo5MinOffset(newDuration);
+    const rawDuration  = (newHeightPx / ROW_HEIGHT_PX) * MINUTES_PER_SLOT;
+    const snappedDur   = snapTo5MinOffset(rawDuration);
     const newEnd       = newStart.add(snappedDur, "minute");
     setHoverTime(`${newStart.format("h:mm A")} - ${newEnd.format("h:mm A")}`);
   }
@@ -109,8 +146,8 @@ function TimeBlock({ block, onUpdate, onEdit }) {
   async function handleResizeStop(e, direction, ref, delta, pos) {
     const newHeightPx  = parseFloat(ref.style.height);
     const newStart     = getSnappedStartTime(pos.y);
-    const newDuration  = (newHeightPx / ROW_HEIGHT_PX) * MINUTES_PER_SLOT;
-    const snappedDur   = snapTo5MinOffset(newDuration);
+    const rawDuration  = (newHeightPx / ROW_HEIGHT_PX) * MINUTES_PER_SLOT;
+    const snappedDur   = snapTo5MinOffset(rawDuration);
     const newEnd       = newStart.add(snappedDur, "minute");
 
     try {
@@ -121,25 +158,25 @@ function TimeBlock({ block, onUpdate, onEdit }) {
       );
       if (!resp.success) {
         alert("Error: " + resp.message);
-        // revert
         setPosition({ x: 100, y: topPx });
-        setSize({ width: 200, height: heightPx });
+        setSize({ width: 275, height: heightPx });
       } else {
         onUpdate();
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
       setPosition({ x: 100, y: topPx });
-      setSize({ width: 200, height: heightPx });
+      setSize({ width: 275, height: heightPx });
+    } finally {
+      setHoverTime("");
     }
-    setHoverTime("");
   }
 
-  // ------------------ DELETE ------------------
+  // ─────────── Handler: Delete ───────────
+
   async function handleDelete(e) {
-    // Make sure we don't accidentally drag
-    e.stopPropagation();
+    e.stopPropagation();  // prevent drag during delete click
     if (!window.confirm("Delete this block?")) return;
+
     try {
       const resp = await deleteTimeBlock(block._id);
       if (!resp.success) {
@@ -147,98 +184,95 @@ function TimeBlock({ block, onUpdate, onEdit }) {
       } else {
         onUpdate();
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
       alert("Network error deleting block");
     }
   }
 
-  // ------------------ RENDER ------------------
+  // ──────────── Render ────────────
+
   return (
     <>
       <Rnd
-        // 1) We'll specify a handle className:
+        resizeHandleComponent={{
+          bottom: (
+            <div
+              data-tour="resize-timeblock"
+              style={{
+                width: "100%",
+                height: "10px",
+                position: "absolute",
+                bottom: 0,
+                cursor: "ns-resize"
+              }}
+            />
+          )
+        }}
         dragHandleClassName="drag-handle"
-        // (That means only elements with "drag-handle" can be used to move.)
-
-        // 2) We remove dragCancel since we only drag with the handle
         dragAxis="y"
         bounds="parent"
         grid={[0, 10]}
         size={{ width: size.width, height: size.height }}
         position={{ x: position.x, y: position.y }}
-
         onDrag={handleDrag}
         onDragStop={handleDragStop}
         onResize={handleResize}
         onResizeStop={handleResizeStop}
-        enableResizing={{
-          top: false,
-          right: false,
-          bottom: true,
-          left: false,
-        }}
+        enableResizing={{ top: false, right: false, bottom: true, left: false }}
         style={{
           backgroundColor: bgColor,
           border,
           borderRadius: "4px",
-          // We'll leave cursor normal here, 
-          // so the handle is the only "move" cursor
           overflow: "hidden",
           padding: 0,
           boxSizing: "border-box",
-          position: "relative",
+          position: "relative"
         }}
       >
-        {/* 
-          DRAG HANDLE: Only this region can be used to move the block.
-          Everything else => normal clicks won't cause a drag.
-        */}
+        {/* DRAG HANDLE region for guided tour step */}
         <div
           className="drag-handle"
+          data-tour="drag-drop-timeblock"
           style={{
             width: "100%",
-            height: "calc(100% - 20px)", 
-            // This leaves 20px at the top for "X" & "Edit" so they aren't draggable
-            backgroundColor: "transparent",
+            height: "calc(100% - 20px)",
             cursor: "move",
             display: "flex",
             alignItems: "center",
-            justifyContent: "center",
+            justifyContent: "center"
           }}
         >
           <strong>{blockLabel}</strong>
         </div>
 
-        {/* "X" => top-right => non-draggable, so no "drag-handle" class */}
+        {/* DELETE BUTTON */}
         <div
+          data-tour="delete-timeblock"
           style={{
             position: "absolute",
             top: 2,
             right: 2,
             cursor: "pointer",
             fontWeight: "bold",
-            color: "red",
+            color: "red"
           }}
-          onClick={(e) => {
-            e.stopPropagation();
-            handleDelete(e);
-          }}
+          onClick={handleDelete}
         >
           X
         </div>
 
-        {/* "Edit" => also in top bar => no "drag-handle" => not draggable */}
+        {/* EDIT BUTTON */}
         <div
+          data-tour="edit-timeblock"
           style={{
             position: "absolute",
             top: 2,
             right: 22,
             cursor: "pointer",
             fontWeight: "bold",
-            color: "cyan",
+            color: "cyan"
           }}
-          onClick={(e) => {
+          onClick={e => {
             e.stopPropagation();
             if (typeof onEdit === "function") onEdit(block);
           }}
@@ -247,7 +281,7 @@ function TimeBlock({ block, onUpdate, onEdit }) {
         </div>
       </Rnd>
 
-      {/* HoverTime overlay */}
+      {/* Hover label showing live preview of new times */}
       {hoverTime && (
         <div
           style={{
@@ -259,7 +293,7 @@ function TimeBlock({ block, onUpdate, onEdit }) {
             padding: "4px 6px",
             borderRadius: "4px",
             fontSize: "0.8rem",
-            pointerEvents: "none",
+            pointerEvents: "none"
           }}
         >
           {hoverTime}

@@ -1,59 +1,91 @@
-// src/Schedule/BlockEditor.jsx
+// ------------------------------------------------------------------
+// Module:    BlockEditor.jsx
+// Author:    John Gibson
+// Created:   2025-04-21
+// Purpose:   UI component for editing a single time block: update times,
+//            set phone alarms, and trigger TaskMagic actions.
+// ------------------------------------------------------------------
+
+/**
+ * @module BlockEditor
+ * @description
+ *   - Renders a modal for editing a freedom time block.
+ *   - Allows users to save updated start/end times.
+ *   - Provides actions for setting phone alarms and calling TaskMagic.
+ */
 
 import React, { useState, useEffect } from "react";
 import dayjs from "dayjs";
 
-// Import your API helpers
+// ─────────────── API Helpers ───────────────
 import { updateTimeBlock, callPhoneAlarm, callTaskMagic } from "./scheduleAPI";
 
-// Helper delay function that returns a promise resolving after ms milliseconds.
+// ─────────────── Utility Functions ───────────────
+/**
+ * Delay execution for a given duration.
+ *
+ * @param {number} ms  Milliseconds to pause.
+ * @returns {Promise<void>}
+ */
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// ─────────────── BlockEditor Component ───────────────
+/**
+ * Edit and manage a single time block.
+ *
+ * @param {Object} props
+ * @param {Object} props.block      Block data containing startTime, endTime, and _id.
+ * @param {function} props.onClose  Callback when modal is closed.
+ * @param {function} props.onSaved  Callback when changes are saved.
+ * @returns {JSX.Element|null}
+ */
 function BlockEditor({ block, onClose, onSaved }) {
-  // Local state for start/end time inputs and error
+  // Local state for form inputs and error feedback
   const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
+  const [end, setEnd]     = useState("");
   const [error, setError] = useState("");
 
-  // New loading states for each button
-  const [isSaving, setIsSaving] = useState(false);
-  const [isSettingPhoneAlarm, setIsSettingPhoneAlarm] = useState(false);
+  // Loading states for each async action
+  const [isSaving, setIsSaving]                   = useState(false);
+  const [isSettingPhoneAlarm, setIsSettingPhoneAlarm]     = useState(false);
   const [isSettingFreedomBlock, setIsSettingFreedomBlock] = useState(false);
 
+  // ─────── Initialize form fields when block changes ───────
   useEffect(() => {
     if (block) {
-      // Format ISO to "HH:mm" for input type="time"
-      const startStr = dayjs(block.startTime).format("HH:mm");
-      const endStr = dayjs(block.endTime).format("HH:mm");
-      setStart(startStr);
-      setEnd(endStr);
+      const fmtStart = dayjs(block.startTime).format("HH:mm");
+      const fmtEnd   = dayjs(block.endTime).format("HH:mm");
+      setStart(fmtStart);
+      setEnd(fmtEnd);
     }
   }, [block]);
 
-  if (!block) return null; // No block => no popup
+  // Do not render modal if no block provided
+  if (!block) return null;
 
-  // ----------------------------
-  // Handle Save (Update) with delay and loading state
-  // ----------------------------
+  // ─────────────── Handle Save ───────────────
+  /**
+   * Persist updated start/end times to server, enforcing a minimum
+   * 3s delay for UX consistency.
+   */
   async function handleSave() {
-    const date = dayjs(block.startTime).format("YYYY-MM-DD"); // keep same date
+    const date = dayjs(block.startTime).format("YYYY-MM-DD");
     const newStartISO = dayjs(`${date}T${start}`).toISOString();
-    const newEndISO = dayjs(`${date}T${end}`).toISOString();
-    
+    const newEndISO   = dayjs(`${date}T${end}`).toISOString();
+
     setIsSaving(true);
     setError("");
-    const startTimeStamp = Date.now();
+    const t0 = Date.now();
     try {
       const resp = await updateTimeBlock(block._id, newStartISO, newEndISO);
-      const elapsed = Date.now() - startTimeStamp;
-      if (elapsed < 3000) {
-        await delay(3000 - elapsed);
-      }
+      const elapsed = Date.now() - t0;
+      if (elapsed < 3000) await delay(3000 - elapsed); // ensure 3s minimum
+
       if (!resp.success) {
         setError(resp.message);
       } else {
-        onSaved(); // Update parent state
-        onClose(); // Close modal
+        onSaved();
+        onClose();
       }
     } catch (err) {
       console.error(err);
@@ -63,20 +95,20 @@ function BlockEditor({ block, onClose, onSaved }) {
     }
   }
 
-  // ----------------------------
-  // Handle Set Phone Alarm with delay and loading state
-  // ----------------------------
+  // ─────────────── Handle Phone Alarm ───────────────
+  /**
+   * Trigger phone alarm via API, enforcing 3s UX delay.
+   */
   async function handleSetPhoneAlarm() {
     setIsSettingPhoneAlarm(true);
-    const startTimeStamp = Date.now();
+    const t0 = Date.now();
     try {
       const resp = await callPhoneAlarm(block._id);
-      const elapsed = Date.now() - startTimeStamp;
-      if (elapsed < 3000) {
-        await delay(3000 - elapsed);
-      }
+      const elapsed = Date.now() - t0;
+      if (elapsed < 3000) await delay(3000 - elapsed);
+
       if (!resp.success) {
-        alert("Phone Alarm error: " + resp.message);
+        alert(`Phone Alarm error: ${resp.message}`);
       } else {
         alert("Phone Alarm set successfully!");
       }
@@ -88,20 +120,20 @@ function BlockEditor({ block, onClose, onSaved }) {
     }
   }
 
-  // ----------------------------
-  // Handle Set Freedom Block with delay and loading state
-  // ----------------------------
+  // ─────────────── Handle Freedom Block ───────────────
+  /**
+   * Invoke TaskMagic webhook via API, enforcing 3s UX delay.
+   */
   async function handleSetFreedomBlock() {
     setIsSettingFreedomBlock(true);
-    const startTimeStamp = Date.now();
+    const t0 = Date.now();
     try {
       const resp = await callTaskMagic(block._id);
-      const elapsed = Date.now() - startTimeStamp;
-      if (elapsed < 3000) {
-        await delay(3000 - elapsed);
-      }
+      const elapsed = Date.now() - t0;
+      if (elapsed < 3000) await delay(3000 - elapsed);
+
       if (!resp.success) {
-        alert("TaskMagic error: " + resp.message);
+        alert(`TaskMagic error: ${resp.message}`);
       } else {
         alert("TaskMagic webhook called!");
       }
@@ -113,16 +145,18 @@ function BlockEditor({ block, onClose, onSaved }) {
     }
   }
 
+  // ─────────────── Render ───────────────
   return (
-    <div style={styles.overlay}>
+    <div style={styles.overlay} data-tour="blockeditor-modal">
       <div style={styles.modal}>
         <h3>Edit Time Block</h3>
         {error && <div style={{ color: "red" }}>{error}</div>}
 
-        {/* Start/End time fields */}
+        {/* Time inputs */}
         <div>
           <label>Start Time: </label>
           <input
+            data-tour="blockeditor-start"
             type="time"
             value={start}
             onChange={(e) => setStart(e.target.value)}
@@ -132,6 +166,7 @@ function BlockEditor({ block, onClose, onSaved }) {
         <div style={{ marginTop: 10 }}>
           <label>End Time: </label>
           <input
+            data-tour="blockeditor-end"
             type="time"
             value={end}
             onChange={(e) => setEnd(e.target.value)}
@@ -139,9 +174,10 @@ function BlockEditor({ block, onClose, onSaved }) {
           />
         </div>
 
+        {/* Action buttons */}
         <div style={{ marginTop: 10 }}>
-          {/* Manual action buttons */}
           <button
+            data-tour="blockeditor-phone-alarm"
             onClick={handleSetPhoneAlarm}
             disabled={isSettingPhoneAlarm || isSaving}
           >
@@ -155,6 +191,7 @@ function BlockEditor({ block, onClose, onSaved }) {
             )}
           </button>
           <button
+            data-tour="blockeditor-freedom-block"
             onClick={handleSetFreedomBlock}
             disabled={isSettingFreedomBlock || isSaving}
             style={{ marginLeft: 10 }}
@@ -170,8 +207,13 @@ function BlockEditor({ block, onClose, onSaved }) {
           </button>
         </div>
 
+        {/* Save/Cancel buttons */}
         <div style={{ marginTop: 10 }}>
-          <button onClick={handleSave} disabled={isSaving}>
+          <button
+            data-tour="blockeditor-save"
+            onClick={handleSave}
+            disabled={isSaving}
+          >
             {isSaving ? (
               <>
                 <div style={spinnerStyle} />
@@ -181,12 +223,18 @@ function BlockEditor({ block, onClose, onSaved }) {
               "Save"
             )}
           </button>
-          <button onClick={onClose} style={{ marginLeft: 10 }} disabled={isSaving}>
+          <button
+            data-tour="blockeditor-cancel"
+            onClick={onClose}
+            style={{ marginLeft: 10 }}
+            disabled={isSaving}
+          >
             Cancel
           </button>
         </div>
       </div>
-      {/* Inline keyframes for spinner animation */}
+
+      {/* Inline spinner animation */}
       <style>{`
         @keyframes spin {
           0% { transform: rotate(0deg); }
@@ -197,14 +245,11 @@ function BlockEditor({ block, onClose, onSaved }) {
   );
 }
 
-// Simple inline styles for overlay and modal
+// ─────────────── Styles ───────────────
 const styles = {
   overlay: {
     position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: "rgba(0,0,0,0.5)",
     display: "flex",
     justifyContent: "center",
@@ -219,7 +264,7 @@ const styles = {
   },
 };
 
-// Spinner style used for all buttons
+// ─────────────── Spinner Style ───────────────
 const spinnerStyle = {
   width: "16px",
   height: "16px",

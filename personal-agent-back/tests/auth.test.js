@@ -1,46 +1,70 @@
-// tests/auth.test.js
+// ------------------------------------------------------------------
+// Module:    tests/auth.test.js
+// Author:    John Gibson
+// Created:   2025-04-21
+// Purpose:   Defines tests for user authentication and profile endpoints.
+// ------------------------------------------------------------------
 
-jest.setTimeout(70000); // Increase timeout for slow operations
+/**
+ * @module auth.test
+ * @description
+ *   - Configures dummy environment to prevent initialization errors.
+ *   - Validates user registration, login, logout, profile retrieval, and timezone update endpoints.
+ */
 
-// Set up dummy environment variables to prevent initialization errors.
+// ─────────────── Test Configuration ───────────────
+
+// Increase Jest timeout for potentially slow asynchronous operations.
+jest.setTimeout(70000);
+
+// Set dummy environment variables to satisfy application initialization.
 process.env.PHONE_ALARM_ENDPOINTS = "http://dummy.com";
-process.env.SESSION_SECRET = "dummySecret";
-process.env.JWT_SECRET = "dummyJwtSecret";
-process.env.DB_HOST = "dummyHost";
-process.env.DB_USER = "dummyUser";
-process.env.DB_PASSWORD = "dummyPassword";
-process.env.DB_NAME = "dummyDB";
-process.env.DB_PORT = "5432";
-process.env.MONGO_URI = "mongodb://localhost:27017/dummydb"; // Ensure your MongoDB is running here
-process.env.DATABASE_URL = "postgres://dummyUser:dummyPassword@dummyHost:5432/dummyDB";
+process.env.SESSION_SECRET        = "dummySecret";
+process.env.JWT_SECRET            = "dummyJwtSecret";
+process.env.DB_HOST               = "dummyHost";
+process.env.DB_USER               = "dummyUser";
+process.env.DB_PASSWORD           = "dummyPassword";
+process.env.DB_NAME               = "dummyDB";
+process.env.DB_PORT               = "5432";
+process.env.MONGO_URI             = "mongodb://localhost:27017/dummydb"; // Ensure MongoDB is running at this URI.
+process.env.DATABASE_URL          = "postgres://dummyUser:dummyPassword@dummyHost:5432/dummyDB";
 
-const request = require("supertest");
-const app = require("../app");
+// ─────────────── Dependencies ───────────────
 
-// Import Mongoose models so we can clear test data before each test
-const User = require("../models/user");
+const request   = require("supertest");
+const app       = require("../app");
+const User      = require("../models/user");
 const UserEmail = require("../models/userEmail");
 
+// Test user credentials used across multiple suites.
 const testUser = {
   username: "testuser@example.com",
   password: "TestPassword123",
 };
 
+// ─────────────── Test Suites ───────────────
+
+/**
+ * Test suite for Authentication and User Endpoints.
+ */
 describe("Authentication and User Endpoints", () => {
-  // Clear user-related collections before each test to ensure test isolation.
+
+  /**
+   * Clear user collections before each test to ensure test isolation.
+   */
   beforeEach(async () => {
     await User.deleteMany({});
     await UserEmail.deleteMany({});
   });
 
-  // ---------------------------
-  // Register Endpoint Tests
-  // ---------------------------
+  // ───── Register Endpoint Tests ─────
+
   describe("POST /api/users/register", () => {
     test("Valid registration returns token and user payload", async () => {
       const response = await request(app)
         .post("/api/users/register")
         .send(testUser);
+
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
       expect(response.body.token).toBeDefined();
@@ -50,9 +74,11 @@ describe("Authentication and User Endpoints", () => {
 
     test("Duplicate registration returns 400 error", async () => {
       await request(app).post("/api/users/register").send(testUser);
+
       const response = await request(app)
         .post("/api/users/register")
         .send(testUser);
+
       expect(response.status).toBe(400);
       expect(response.body.success).toBe(false);
       expect(response.body.message).toMatch(/already registered/i);
@@ -62,6 +88,7 @@ describe("Authentication and User Endpoints", () => {
       const response = await request(app)
         .post("/api/users/register")
         .send({ username: "invalidEmail", password: "TestPassword123" });
+
       expect(response.status).toBe(400);
       expect(response.body.success).toBe(false);
     });
@@ -70,16 +97,17 @@ describe("Authentication and User Endpoints", () => {
       const response = await request(app)
         .post("/api/users/register")
         .send({ username: "newuser@example.com", password: "short" });
+
       expect(response.status).toBe(400);
       expect(response.body.success).toBe(false);
     });
   });
 
-  // ---------------------------
-  // Login Endpoint Tests
-  // ---------------------------
+  // ───── Login Endpoint Tests ─────
+
   describe("POST /api/users/login", () => {
     beforeEach(async () => {
+      // Ensure user exists before login tests.
       await request(app).post("/api/users/register").send(testUser);
     });
 
@@ -87,6 +115,7 @@ describe("Authentication and User Endpoints", () => {
       const response = await request(app)
         .post("/api/users/login")
         .send(testUser);
+
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
       expect(response.body.token).toBeDefined();
@@ -98,6 +127,7 @@ describe("Authentication and User Endpoints", () => {
       const response = await request(app)
         .post("/api/users/login")
         .send({ username: testUser.username, password: "WrongPassword" });
+
       expect(response.status).toBe(401);
       expect(response.body.success).toBe(false);
     });
@@ -106,17 +136,19 @@ describe("Authentication and User Endpoints", () => {
       const response = await request(app)
         .post("/api/users/login")
         .send({ username: testUser.username });
+
       expect(response.status).toBe(400);
       expect(response.body.success).toBe(false);
     });
   });
 
-  // ---------------------------
-  // Logout Endpoint Tests
-  // ---------------------------
+  // ───── Logout Endpoint Tests ─────
+
   describe("POST /api/users/logout", () => {
     let token;
+
     beforeEach(async () => {
+      // Authenticate user to obtain a valid token.
       await request(app).post("/api/users/register").send(testUser);
       const loginRes = await request(app)
         .post("/api/users/login")
@@ -129,22 +161,26 @@ describe("Authentication and User Endpoints", () => {
         .post("/api/users/logout")
         .set("Authorization", `Bearer ${token}`)
         .send();
+
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
     });
 
     test("Unauthenticated logout returns 401 error", async () => {
-      const response = await request(app).post("/api/users/logout").send();
+      const response = await request(app)
+        .post("/api/users/logout")
+        .send();
+
       expect(response.status).toBe(401);
       expect(response.body.success).toBe(false);
     });
   });
 
-  // ---------------------------
-  // User Profile Endpoint Tests
-  // ---------------------------
+  // ───── User Profile Endpoint Tests ─────
+
   describe("GET /api/users/me", () => {
     let token;
+
     beforeEach(async () => {
       await request(app).post("/api/users/register").send(testUser);
       const loginRes = await request(app)
@@ -158,6 +194,7 @@ describe("Authentication and User Endpoints", () => {
         .get("/api/users/me")
         .set("Authorization", `Bearer ${token}`)
         .send();
+
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
       expect(response.body.user).toBeDefined();
@@ -165,17 +202,20 @@ describe("Authentication and User Endpoints", () => {
     });
 
     test("Missing token returns 401 error", async () => {
-      const response = await request(app).get("/api/users/me").send();
+      const response = await request(app)
+        .get("/api/users/me")
+        .send();
+
       expect(response.status).toBe(401);
       expect(response.body.success).toBe(false);
     });
   });
 
-  // ---------------------------
-  // Timezone Update Endpoint Tests
-  // ---------------------------
+  // ───── Timezone Update Endpoint Tests ─────
+
   describe("PUT /api/users/timezone", () => {
     let token;
+
     beforeEach(async () => {
       await request(app).post("/api/users/register").send(testUser);
       const loginRes = await request(app)
@@ -189,6 +229,7 @@ describe("Authentication and User Endpoints", () => {
         .put("/api/users/timezone")
         .set("Authorization", `Bearer ${token}`)
         .send({ timezone: "America/Denver" });
+
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
       expect(response.body.user).toBeDefined();
@@ -201,13 +242,18 @@ describe("Authentication and User Endpoints", () => {
         .put("/api/users/timezone")
         .set("Authorization", `Bearer ${token}`)
         .send({});
+
       expect(response.status).toBe(400);
       expect(response.body.success).toBe(false);
     });
   });
 });
 
-// After all tests have completed, close the Mongoose connection.
+// ─────────────── Test Teardown ───────────────
+
+/**
+ * Close the Mongoose connection after all tests complete.
+ */
 afterAll(async () => {
   const mongoose = require("mongoose");
   await mongoose.connection.close();

@@ -1,32 +1,56 @@
-// config/sequelize.js
+// ------------------------------------------------------------------
+// Module:    config/sequelize.js
+// Author:    John Gibson
+// Created:   2025‑04‑21
+// Purpose:   Initialize and configure Sequelize connection to PostgreSQL.
+// ------------------------------------------------------------------
 
-// 1. Import Sequelize and dotenv
+/**
+ * @module config/sequelize
+ * @description
+ *   - Loads environment variables from `.env`.
+ *   - Instantiates Sequelize with appropriate SSL options.
+ *   - Tests the database connection on startup and logs errors.
+ */
+
+// ─────────── Dependencies ───────────
 const { Sequelize } = require('sequelize');
 require('dotenv').config();
+
+// ─────────── Configuration ───────────
+/**
+ * @constant
+ * @type {boolean}
+ * @description
+ *   True in production to enable SSL for Postgres connections.
+ */
 const isProduction = process.env.NODE_ENV === 'production';
 
-// 2. Create a new Sequelize instance
+/**
+ * @constant
+ * @type {Sequelize}
+ * @description
+ *   Sequelize instance configured with DATABASE_URL and SSL options.
+ */
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
-  logging: console.log,
   dialect: 'postgres',
-    dialectOptions: {
-      ssl: isProduction
-        ? {
-            require: true,
-            rejectUnauthorized: false,
-          }
-        : false,
-    },
-  });
+  dialectOptions: {
+    ssl: isProduction
+      ? {
+          require: true,
+          // allow self‑signed certificates in production environments
+          rejectUnauthorized: false
+        }
+      : false
+  }
+});
 
-// 3. Test the database connection
+// ─────────── Connection Test ───────────
 sequelize.authenticate()
-  .then(() => {
-    console.log('Sequelize connected to PostgreSQL database.');
-  })
-  .catch((error) => {
+  .catch(error => {
+    // Only log errors to avoid noisy debug output on successful connect
     console.error('Unable to connect to the database:', error);
   });
 
-// 4. Export the sequelize instance
+// ─────────── Export ───────────
 module.exports = sequelize;
