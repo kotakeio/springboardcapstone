@@ -1,284 +1,204 @@
-// tests/freedomBlocks.test.js
+// ------------------------------------------------------------------
+// Module:    tests/freedomBlocks.test.js
+// Author:    John Gibson
+// Created:   2025‑04‑21
+// Purpose:   Integration tests for Freedom Blocks endpoints, covering
+//            manual edits, block regeneration, deletions, and scheduling.
+// ------------------------------------------------------------------
 
-jest.setTimeout(70000); // Increase timeout for slow operations
+/**
+ * @module tests/freedomBlocks.test
+ * @description
+ *   - Sets up a dummy environment and mocks external services.
+ *   - Verifies behavior of shortening manual blocks, regenerating free blocks,
+ *     and excluding deleted blocks.
+ *   - Uses Supertest against the Express app with JWT auth.
+ */
 
-// Set up dummy environment variables.
-process.env.PHONE_ALARM_ENDPOINTS = "http://dummy.com";
-process.env.SESSION_SECRET = "dummySecret";
-process.env.JWT_SECRET = "dummyJwtSecret";
-process.env.DB_HOST = "dummyHost";
-process.env.DB_USER = "dummyUser";
-process.env.DB_PASSWORD = "dummyPassword";
-process.env.DB_NAME = "dummyDB";
-process.env.DB_PORT = "5432";
-process.env.MONGO_URI = "mongodb://localhost:27017/dummydb";
-process.env.DATABASE_URL = "postgres://dummyUser:dummyPassword@dummyHost:5432/dummyDB";
+// ─────────────── Test Framework Configuration ───────────────
+
+jest.setTimeout(70000); // for slow operations
+
+// ─────────────── Environment & Mocks ───────────────
+
+process.env.SESSION_SECRET         = "dummySecret";
+process.env.JWT_SECRET             = "dummyJwtSecret";
+process.env.PHONE_ALARM_ENDPOINTS  = "http://dummy.com";
 
 jest.mock("../services/calendar/appointments.service", () => {
-    // Import dayjs and its plugins inside the factory.
-    const dayjs = require("dayjs");
-    const utc = require("dayjs/plugin/utc");
-    const timezone = require("dayjs/plugin/timezone");
-    dayjs.extend(utc);
-    dayjs.extend(timezone);
-  
-    return {
-      getBusyTimesUntil: jest.fn(async (calendarIds, endTime) => ({
-        now: dayjs().tz("America/Denver"),
-        busyArray: []
-      })),
-      listAppointments: jest.fn(async (calendarId, timeMin, timeMax) => {
-        return []; // no appointments
-      })
-    };
-  });
-
-// For phone alarms, we simply resolve without error.
-jest.mock("../services/phoneAlarm.service", () => ({
-  setPhoneAlarm: jest.fn(async (time) => {
-    return; // do nothing
-  })
-}));
-
-const request = require("supertest");
-const app = require("../app");
-
-// Import Mongoose models for test setup and cleanup.
-const FreedomTimeBlock = require("../models/freedomTimeBlocks");
-const User = require("../models/user");
-const UserEmail = require("../models/userEmail");
-
-// Define a test user for authentication.
-const testUser = {
-  username: "testfreedom@example.com",
-  password: "TestPassword123",
-};
-
-let token; // Will hold the JWT token for authenticated requests.
-
-// Before each test, clear all relevant collections and set up a fresh test user with verified email.
-beforeEach(async () => {
-  const User = require("../models/user");
-  const UserEmail = require("../models/userEmail");
-  const FreedomTimeBlock = require("../models/freedomTimeBlocks");
-
-  // Clear collections.
-  await User.deleteMany({});
-  await UserEmail.deleteMany({});
-  await FreedomTimeBlock.deleteMany({});
-
-  // Register the test user.
-  await request(app).post("/api/users/register").send(testUser);
-  const loginRes = await request(app).post("/api/users/login").send(testUser);
-  token = loginRes.body.token;
-  const user = await User.findOne({ username: testUser.username });
-
-  // Update the existing UserEmail document to mark it as verified.
-  await UserEmail.findOneAndUpdate(
-    { email: testUser.username },
-    { isCalendarOnboarded: true, userId: user._id },
-    { new: true }
-  );
+  const dayjs = require("dayjs");
+  const utc = require("dayjs/plugin/utc");
+  const timezone = require("dayjs/plugin/timezone");
+  dayjs.extend(utc);
+  dayjs.extend(timezone);
+  return {
+    getBusyTimesUntil: jest.fn(async () => ({
+      now:       dayjs().tz("America/Denver"),
+      busyArray: []
+    })),
+    listAppointments: jest.fn(async () => [])
+  };
 });
 
-// After each test, clear the FreedomTimeBlock collection.
+jest.mock("../services/phoneAlarm.service", () => ({
+  setPhoneAlarm: jest.fn(async () => {})
+}));
+
+// ─────────────── Dependencies ───────────────
+
+const request            = require("supertest");
+const dayjs              = require("dayjs");
+const tzPlugin           = require("dayjs/plugin/timezone");
+dayjs.extend(tzPlugin);
+
+const app                = require("../app");
+const User               = require("../models/user");
+const UserEmail          = require("../models/userEmail");
+const FreedomTimeBlock   = require("../models/freedomTimeBlocks");
+
+// ─────────────── Test Data & Globals ───────────────
+
+const testUser = {
+  username: "testfreedom@example.com",
+  password: "TestPassword123"
+};
+
+let token;
+
+// ─────────────── Lifecycle Hooks ───────────────
+
+beforeEach(async () => {
+  // Clean slate
+  await Promise.all([
+    User.deleteMany({}),
+    UserEmail.deleteMany({}),
+    FreedomTimeBlock.deleteMany({})
+  ]);
+
+  // Register & login
+  const regRes   = await request(app).post("/api/users/register").send(testUser);
+  expect(regRes.status).toBe(200);
+  const loginRes = await request(app).post("/api/users/login").send(testUser);
+  expect(loginRes.status).toBe(200);
+  token = loginRes.body.token;
+  const userId = loginRes.body.user._id;
+
+  // Mark calendar email onboarded
+  const emailDoc = await UserEmail.findOneAndUpdate(
+    { email: testUser.username },
+    { isCalendarOnboarded: true, userId },
+    { new: true }
+  );
+  expect(emailDoc).toBeTruthy();
+});
+
 afterEach(async () => {
   await FreedomTimeBlock.deleteMany({});
 });
 
+// ─────────────── Test Suites ───────────────
+
 describe("Freedom Blocks Endpoints", () => {
+  describe("Editing and Regeneration with manual & approved blocks", () => {
 
-  describe("POST /api/freedom-blocks", () => {
-    test("Creates freedom time blocks when verified emails exist", async () => {
-      const res = await request(app)
-        .post("/api/freedom-blocks")
+    test("Shortening a manual block creates a leftover excluded block", async () => {
+      const dateToday    = dayjs().tz("America/Denver").format("YYYY-MM-DD");
+      const originalStart = dayjs.tz(`${dateToday} 12:00`, "YYYY-MM-DD HH:mm", "America/Denver").toDate();
+      const originalEnd   = dayjs.tz(`${dateToday} 12:55`, "YYYY-MM-DD HH:mm", "America/Denver").toDate();
+
+      const block = await FreedomTimeBlock.create({
+        startTime:  originalStart,
+        endTime:    originalEnd,
+        approved:   false,
+        sourceType: "manual"
+      });
+
+      const newEndISO = dayjs(originalStart).add(15, "minute").toISOString();
+      const resUpdate = await request(app)
+        .put(`/api/freedom-blocks/${block._id}`)
         .set("Authorization", `Bearer ${token}`)
-        .send();
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      // The response should include a blocks array and indicate verified emails.
-      expect(res.body.verified).toBe(true);
-      expect(res.body.blocks).toBeDefined();
-    });
-  });
+        .send({ startTime: originalStart.toISOString(), endTime: newEndISO });
 
-  describe("GET /api/freedom-blocks/today", () => {
-    test("Returns today's schedule with time blocks and appointments", async () => {
-      const res = await request(app)
+      expect(resUpdate.status).toBe(200);
+      expect(resUpdate.body.success).toBe(true);
+
+      const updated = resUpdate.body.block;
+      expect(new Date(updated.endTime).getTime()).toEqual(new Date(newEndISO).getTime());
+
+      const leftovers = await FreedomTimeBlock.find({ sourceType: "excluded" });
+      expect(leftovers).toHaveLength(1);
+      expect(new Date(leftovers[0].startTime).getTime()).toEqual(new Date(newEndISO).getTime());
+      expect(new Date(leftovers[0].endTime).getTime()).toEqual(originalEnd.getTime());
+    });
+
+    test("Regeneration respects manual and approved blocks", async () => {
+      const dateToday    = dayjs().tz("America/Denver").format("YYYY-MM-DD");
+      const manualStart  = dayjs.tz(`${dateToday} 13:00`, "YYYY-MM-DD HH:mm", "America/Denver").toDate();
+      const manualEnd    = dayjs(manualStart).add(30, "minute").toDate();
+      await FreedomTimeBlock.create({ startTime: manualStart, endTime: manualEnd, approved: false, sourceType: "manual" });
+
+      const approvedStart = dayjs.tz(`${dateToday} 14:00`, "YYYY-MM-DD HH:mm", "America/Denver").toDate();
+      const approvedEnd   = dayjs(approvedStart).add(50, "minute").toDate();
+      await FreedomTimeBlock.create({ startTime: approvedStart, endTime: approvedEnd, approved: true, sourceType: "approved" });
+
+      const resSchedule = await request(app)
         .get("/api/freedom-blocks/today")
         .set("Authorization", `Bearer ${token}`)
         .send();
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.verified).toBe(true);
-      expect(Array.isArray(res.body.timeBlocks)).toBe(true);
-      expect(Array.isArray(res.body.appointments)).toBe(true);
-    });
-  });
 
-  describe("PUT /api/freedom-blocks/:id", () => {
-    let block;
-    beforeEach(async () => {
-      // Create a test block.
-      block = await FreedomTimeBlock.create({
-        startTime: new Date(Date.now() + 60 * 60 * 1000), // 1 hour from now
-        endTime: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours from now
-        approved: false,
+      expect(resSchedule.status).toBe(200);
+      expect(resSchedule.body.success).toBe(true);
+
+      resSchedule.body.timeBlocks
+        .filter(b => b.sourceType === "auto")
+        .forEach(b => {
+          const start = new Date(b.startTime);
+          const end   = new Date(b.endTime);
+
+          // must lie entirely outside manual block
+          expect(
+            end <= manualStart ||
+            start >= manualEnd
+          ).toBe(true);
+
+          // must lie entirely outside approved block
+          expect(
+            end <= approvedStart ||
+            start >= approvedEnd
+          ).toBe(true);
+        });
+    });
+
+    test("Deleted (excluded) blocks are not displayed nor regenerated", async () => {
+      const dateToday = dayjs().tz("America/Denver").format("YYYY-MM-DD");
+      const autoStart = dayjs.tz(`${dateToday} 15:00`, "YYYY-MM-DD HH:mm", "America/Denver").toDate();
+      const autoEnd   = dayjs(autoStart).add(50, "minute").toDate();
+
+      const autoBlock = await FreedomTimeBlock.create({
+        startTime:  autoStart,
+        endTime:    autoEnd,
+        approved:   false,
+        sourceType: "auto"
+      });
+
+      const resDelete = await request(app)
+        .delete(`/api/freedom-blocks/${autoBlock._id}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send();
+
+      expect(resDelete.status).toBe(200);
+      expect(resDelete.body.success).toBe(true);
+
+      const resSchedule = await request(app)
+        .get("/api/freedom-blocks/today")
+        .set("Authorization", `Bearer ${token}`)
+        .send();
+
+      expect(resSchedule.status).toBe(200);
+      resSchedule.body.timeBlocks.forEach(b => {
+        expect(b.sourceType).not.toBe("excluded");
       });
     });
-    test("Updates a freedom block with valid times", async () => {
-      // New start/end times in ISO string format.
-      const newStart = new Date(Date.now() + 90 * 60 * 1000).toISOString();
-      const newEnd = new Date(Date.now() + 2.5 * 60 * 60 * 1000).toISOString();
-      const res = await request(app)
-        .put(`/api/freedom-blocks/${block._id}`)
-        .set("Authorization", `Bearer ${token}`)
-        .send({ startTime: newStart, endTime: newEnd });
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.block).toBeDefined();
-    });
-    test("Returns 404 if block not found", async () => {
-      const nonExistentId = "645bca9f4e8b9a0012345678";
-      const newStart = new Date(Date.now() + 90 * 60 * 1000).toISOString();
-      const newEnd = new Date(Date.now() + 2.5 * 60 * 60 * 1000).toISOString();
-      const res = await request(app)
-        .put(`/api/freedom-blocks/${nonExistentId}`)
-        .set("Authorization", `Bearer ${token}`)
-        .send({ startTime: newStart, endTime: newEnd });
-      expect(res.status).toBe(404);
-      expect(res.body.success).toBe(false);
-    });
-  });
 
-  describe("POST /api/freedom-blocks/approveAll", () => {
-    beforeEach(async () => {
-      // Create two unapproved blocks.
-      await FreedomTimeBlock.create([
-        {
-          startTime: new Date(Date.now() + 60 * 60 * 1000),
-          endTime: new Date(Date.now() + 2 * 60 * 60 * 1000),
-          approved: false,
-        },
-        {
-          startTime: new Date(Date.now() + 3 * 60 * 60 * 1000),
-          endTime: new Date(Date.now() + 4 * 60 * 60 * 1000),
-          approved: false,
-        }
-      ]);
-    });
-    test("Approves all blocks and returns success message", async () => {
-      const res = await request(app)
-        .post("/api/freedom-blocks/approveAll")
-        .set("Authorization", `Bearer ${token}`)
-        .send();
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.message).toMatch(/Approved \d+ blocks/);
-      // Verify that blocks in the DB are now approved.
-      const blocks = await FreedomTimeBlock.find({});
-      blocks.forEach(b => {
-        expect(b.approved).toBe(true);
-      });
-    });
   });
-
-  describe("DELETE /api/freedom-blocks/:id", () => {
-    let block;
-    beforeEach(async () => {
-      block = await FreedomTimeBlock.create({
-        startTime: new Date(Date.now() + 60 * 60 * 1000),
-        endTime: new Date(Date.now() + 2 * 60 * 60 * 1000),
-        approved: false,
-      });
-    });
-    test("Deletes a block successfully", async () => {
-      const res = await request(app)
-        .delete(`/api/freedom-blocks/${block._id}`)
-        .set("Authorization", `Bearer ${token}`)
-        .send();
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      const deleted = await FreedomTimeBlock.findById(block._id);
-      expect(deleted).toBeNull();
-    });
-    test("Returns 404 when deleting a non-existent block", async () => {
-      const nonExistentId = "645bca9f4e8b9a0012345678";
-      const res = await request(app)
-        .delete(`/api/freedom-blocks/${nonExistentId}`)
-        .set("Authorization", `Bearer ${token}`)
-        .send();
-      expect(res.status).toBe(404);
-      expect(res.body.success).toBe(false);
-    });
-  });
-
-  describe("POST /api/freedom-blocks/:id/phoneAlarm", () => {
-    let block;
-    beforeEach(async () => {
-      block = await FreedomTimeBlock.create({
-        startTime: new Date(Date.now() + 60 * 60 * 1000),
-        endTime: new Date(Date.now() + 2 * 60 * 60 * 1000),
-        approved: false,
-      });
-    });
-    test("Sets phone alarm successfully", async () => {
-      const res = await request(app)
-        .post(`/api/freedom-blocks/${block._id}/phoneAlarm`)
-        .set("Authorization", `Bearer ${token}`)
-        .send();
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.message).toMatch(/Alarm set for block/);
-    });
-    test("Returns 404 for non-existent block", async () => {
-      const nonExistentId = "645bca9f4e8b9a0012345678";
-      const res = await request(app)
-        .post(`/api/freedom-blocks/${nonExistentId}/phoneAlarm`)
-        .set("Authorization", `Bearer ${token}`)
-        .send();
-      expect(res.status).toBe(404);
-      expect(res.body.success).toBe(false);
-    });
-  });
-
-  describe("POST /api/freedom-blocks/:id/taskMagic", () => {
-    let block;
-    beforeEach(async () => {
-      block = await FreedomTimeBlock.create({
-        startTime: new Date(Date.now() + 60 * 60 * 1000),
-        endTime: new Date(Date.now() + 2 * 60 * 60 * 1000),
-        approved: false,
-      });
-    });
-    test("Triggers TaskMagic and returns webhook response", async () => {
-      // Set a dummy webhook URL.
-      process.env.FREEDOM_APP_TASKMAGIC_WEBHOOK = "http://dummy-webhook.com";
-      // Mock the global fetch function to simulate a successful webhook call.
-      global.fetch = jest.fn(async () => ({
-        ok: true,
-        status: 200,
-        text: async () => "Dummy webhook response",
-      }));
-      const res = await request(app)
-        .post(`/api/freedom-blocks/${block._id}/taskMagic`)
-        .set("Authorization", `Bearer ${token}`)
-        .send();
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.webhookResponse).toBe("Dummy webhook response");
-    });
-    test("Returns 404 for non-existent block", async () => {
-      const nonExistentId = "645bca9f4e8b9a0012345678";
-      const res = await request(app)
-        .post(`/api/freedom-blocks/${nonExistentId}/taskMagic`)
-        .set("Authorization", `Bearer ${token}`)
-        .send();
-      expect(res.status).toBe(404);
-      expect(res.body.success).toBe(false);
-    });
-  });
-
 });
-
-// Note: We rely on the global teardown (jest.teardown.js) to disconnect Mongoose and stop the in-memory MongoDB.

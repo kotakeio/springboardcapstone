@@ -1,23 +1,58 @@
-// server.js
-require("dotenv").config();
-const http = require("http");
-const app = require("./app"); // your Express app
-const mongoose = require("./config/mongo"); // Ensure this is required so connection is initiated
+// ------------------------------------------------------------------
+// Module:    server.js
+// Author:    John Gibson
+// Created:   2025-04-21
+// Purpose:   Load environment, initialize DB connection, and start HTTP server.
+// ------------------------------------------------------------------
 
-const PORT = process.env.PORT || 5000;
+/**
+ * @module server.js
+ * @description
+ *   - Load environment variables
+ *   - Initialize MongoDB connection via Mongoose
+ *   - Create and start HTTP server for the Express app
+ */
 
-// Create an HTTP server from our Express app
-const server = http.createServer(app);
+// ─────────────── Dependencies ───────────────
 
-// Wait for Mongoose to establish the connection before starting the server
+require("dotenv").config();  
+// Load .env variables before any other module imports
+
+const http     = require("http");
+const app      = require("./app");          
+const mongoose = require("./config/mongo"); 
+// Requiring mongo config triggers mongoose.connect(…)
+
+// ─────────────── Configuration ───────────────
+
+const PORT = process.env.PORT || 5000;  
+// Default to 5000 if PORT is not set
+
+// ─────────────── HTTP Server ───────────────
+
+const server = http.createServer(app);  
+// Wrap Express app in a Node HTTP server
+
+// ─────────── Database Connection ────────────
+
+/**
+ * Once Mongoose connection is open, start listening.
+ */
 mongoose.connection.once("open", () => {
-  console.log("Mongoose connection is open. Starting server...");
+  // Start server only after DB is ready
   server.listen(PORT, () => {
-    console.log(`Backend is listening on port ${PORT}...`);
+    console.info(`Server is listening on port ${PORT}`);  
+    // INFO: Server ready to accept requests
   });
 });
 
-// Optional: also listen for error events on the connection
+/**
+ * Log any Mongoose connection errors.
+ */
 mongoose.connection.on("error", (err) => {
   console.error("Mongoose connection error:", err);
+  // ERROR: Investigate connection issues
 });
+
+module.exports = server;  
+// Export server for integration tests or external control

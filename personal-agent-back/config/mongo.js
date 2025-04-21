@@ -1,20 +1,31 @@
-// config/mongo.js
-// 1. Import mongoose
+// ------------------------------------------------------------------
+// Module:    config/mongo.js
+// Author:    John Gibson
+// Created:   2025-04-21
+// Purpose:   Establishes and exports a connection to MongoDB via Mongoose.
+// ------------------------------------------------------------------
+
+/**
+ * @module config/mongo
+ * @description
+ *   - Loads environment variables from a .env file.
+ *   - Establishes a Mongoose connection to the MongoDB instance.
+ *   - Exports the connected Mongoose instance for use in other modules.
+ */
+
+// ─────────────── Dependencies ───────────────
 const mongoose = require('mongoose');
-// 2. Load environment variables from .env (make sure MONGO_URI is set there)
-require('dotenv').config();
+require('dotenv').config(); // Load environment variables from .env.
 
-// 3. Connect to MongoDB using the connection string in your .env file
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => {
-  console.log('Connected to MongoDB successfully!');
-})
-.catch((err) => {
-  console.error('MongoDB connection error:', err);
-});
+// ─────────────── Connection Logic ───────────────
+mongoose
+  .connect(process.env.MONGO_URI)                // No more deprecated flags here
+  .then(() => {
+    console.log('MongoDB successfully connected');  // Optional: confirm connection
+  })
+  .catch((err) => {
+    console.error('MongoDB connection error:', err);
+  });
 
-// 4. Export mongoose in case you need it in other parts of your app
+// ─────────────── Export ───────────────
 module.exports = mongoose;

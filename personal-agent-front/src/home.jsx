@@ -1,12 +1,39 @@
-// src/Home.jsx
-import React from "react";
-import { useNavigate } from "react-router-dom"; // import useNavigate from react-router-dom
+// ------------------------------------------------------------------
+// Module:    src/Home.jsx
+// Author:    John Gibson
+// Created:   2025-04-21
+// Purpose:   Landing page component for AI Agents with navigation
+//            to the schedule view.
+// ------------------------------------------------------------------
 
+/**
+ * @module Home
+ * @description
+ *   React component that renders the AI Agents landing page
+ *   and provides a button to navigate to the schedule screen.
+ */
+
+// ─────────────── Dependencies ───────────────
+import React from "react";
+import { useNavigate } from "react-router-dom";
+
+// ─────────────── Component ───────────────
+
+/**
+ * Home component renders the AI Agents landing page.
+ *
+ * @returns {JSX.Element} The Home component UI.
+ */
 function Home() {
   const navigate = useNavigate();
 
-  // This function now navigates to "/schedule"
+  /**
+   * Navigate to the "/schedule" route when the user clicks the button.
+   *
+   * @returns {void}
+   */
   const handleSchedule = () => {
+    // using react‑router navigation to switch views without reload
     navigate("/schedule");
   };
 
@@ -17,5 +44,7 @@ function Home() {
     </div>
   );
 }
+
+// ─────────────── Exports ───────────────
 
 export default Home;

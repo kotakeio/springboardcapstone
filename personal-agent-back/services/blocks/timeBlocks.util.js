@@ -1,31 +1,59 @@
-// services/blocks/timeBlocks.util.js
+// ------------------------------------------------------------------
+// Module:    services/blocks/timeBlocks.util.js
+// Author:    John Gibson
+// Created:   2025-04-21
+// Purpose:   Utilities to calculate and split free time intervals
+//            from busy time intervals using dayjs.
+// ------------------------------------------------------------------
 
-const dayjs = require("dayjs");
-const utc = require("dayjs/plugin/utc");
+/**
+ * @module TimeBlocksUtil
+ * @description
+ *   - Calculate free intervals given busy intervals and boundaries.
+ *   - Break free intervals into discrete blocks of 50- and 25-minute
+ *     durations with configured gaps.
+ *   - Round timestamps to half-hour or full-hour boundaries.
+ */
+
+// ─────────────── Dependencies ───────────────
+const dayjs    = require("dayjs");
+const utc      = require("dayjs/plugin/utc");
 const timezone = require("dayjs/plugin/timezone");
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-//
-// 1) Convert busy array -> free intervals
-//
+// ─────────────── Core Functions ───────────────
+/**
+ * Calculate free intervals between now and endTime by excluding busy periods.
+ *
+ * @param {dayjs.Dayjs} now         Current timestamp (dayjs object).
+ * @param {dayjs.Dayjs} endTime     End boundary for free time.
+ * @param {Array<{start: string, end: string}>} busyArray
+ *        List of busy intervals with ISO start/end strings.
+ * @returns {Array<{start: dayjs.Dayjs, end: dayjs.Dayjs}>}
+ *          Array of free intervals as dayjs objects.
+ */
 function calculateFreeIntervals(now, endTime, busyArray) {
-  let freeIntervals = [];
+  const freeIntervals = [];
   let lastEnd = now;
 
   busyArray.forEach((b) => {
+    // Parse busy interval into Denver timezone for comparison
     const busyStart = dayjs.utc(b.start).tz("America/Denver");
-    const busyEnd = dayjs.utc(b.end).tz("America/Denver");
+    const busyEnd   = dayjs.utc(b.end).tz("America/Denver");
 
+    // If there is a gap between last end and the next busy start, record it
     if (busyStart.isAfter(lastEnd)) {
       freeIntervals.push({ start: lastEnd, end: busyStart });
     }
+    // Always advance lastEnd to the latest busy end encountered
     if (busyEnd.isAfter(lastEnd)) {
       lastEnd = busyEnd;
     }
   });
 
+  // After processing all busy intervals, include final gap if any
   if (endTime.isAfter(lastEnd)) {
     freeIntervals.push({ start: lastEnd, end: endTime });
   }
@@ -33,99 +61,104 @@ function calculateFreeIntervals(now, endTime, busyArray) {
   return freeIntervals;
 }
 
-//
-// 2) Break free intervals into 50/25-min blocks, with special rules:
-//    - If pointer starts on :30, do an initial 25-min block so subsequent blocks start on hour.
-//    - Standard 50-min blocks + 10-min gap, or 25-min + 5-min gap
-//    - If last block ends at 15:20, forcibly add 15:30..15:55 block (if that’s your desired tweak).
-//
+/**
+ * Break free intervals into blocks of 50 or 25 minutes,
+ * inserting gaps between blocks (10 or 5 mins).
+ *
+ * @param {Array<{start: dayjs.Dayjs, end: dayjs.Dayjs}>} freeIntervals
+ *        List of free intervals.
+ * @returns {Array<{start: string, end: string, length: number}>}
+ *          Array of block objects with HH:mm strings and duration.
+ */
 function breakDownFreeTime(freeIntervals) {
   const blocks = [];
 
   freeIntervals.forEach((interval) => {
-    console.log("Type of interval.start:", typeof interval.start, interval.start);
+    // Initialize pointer at the nearest half-hour boundary
     let pointer = roundToHalfHour(interval.start);
 
-    // If pointer is exactly on :30 for the first block => 25 min, then round up to next hour
+    // If pointer falls exactly on :30, attempt a 25-min block first
     if (pointer.minute() === 30 && pointer.isBefore(interval.end)) {
-      const nextPointer = pointer.add(25, "minute");
-      if (nextPointer.isBefore(interval.end)) {
+      const next25 = pointer.add(25, "minute");
+      if (next25.isBefore(interval.end)) {
         blocks.push({
           start: pointer.format("HH:mm"),
-          end: nextPointer.format("HH:mm"),
-          length: 25,
+          end:   next25.format("HH:mm"),
+          length: 25
         });
-        pointer = roundUpToHour(nextPointer);
+        // Round up to the next hour after the 25-min block
+        pointer = roundUpToHour(next25);
       }
     }
 
-    // Now proceed with normal block creation
+    // Fill remaining time with blocks and gaps until interval end
     while (pointer.isBefore(interval.end)) {
-      // Attempt 50-min block
-      const potential50End = pointer.add(50, "minute");
-
-      if (potential50End.isBefore(interval.end) || potential50End.isSame(interval.end)) {
+      const end50 = pointer.add(50, "minute");
+      if (end50.isSameOrBefore(interval.end)) {
+        // Add a 50-min block with a 10-min gap
         blocks.push({
           start: pointer.format("HH:mm"),
-          end: potential50End.format("HH:mm"),
-          length: 50,
+          end:   end50.format("HH:mm"),
+          length: 50
         });
-        pointer = potential50End.add(10, "minute"); // 10-min gap
+        pointer = end50.add(10, "minute");
       } else {
-        // Try 25-min block
-        const potential25End = pointer.add(25, "minute");
-        if (potential25End.isBefore(interval.end) || potential25End.isSame(interval.end)) {
+        const end25 = pointer.add(25, "minute");
+        if (end25.isSameOrBefore(interval.end)) {
+          // Add a 25-min block with a 5-min gap
           blocks.push({
             start: pointer.format("HH:mm"),
-            end: potential25End.format("HH:mm"),
-            length: 25,
+            end:   end25.format("HH:mm"),
+            length: 25
           });
-          pointer = potential25End.add(5, "minute"); // 5-min gap
+          pointer = end25.add(5, "minute");
         } else {
-          break; // no room for 25
+          // No more room for a standard block, exit loop
+          break;
         }
       }
     }
   });
 
-  // Optional: force an extra 25-min block if last ended at 15:20
-  if (blocks.length) {
-    const lastBlock = blocks[blocks.length - 1];
-    if (lastBlock.end === "15:20") {
-      blocks.push({
-        start: "15:30",
-        end: "15:55",
-        length: 25,
-      });
-    }
+  // Special-case tweak: add a final block if last ends at specific time
+  const last = blocks[blocks.length - 1];
+  if (last && last.end === "15:20") {
+    blocks.push({ start: "15:30", end: "15:55", length: 25 });
   }
 
   return blocks;
 }
 
-//
-// 3) Rounds a date/time to the *nearest* half-hour boundary.
-//    If minute < 30 => minute=30, else minute=60 (which bumps the hour).
-//
+// ─────────────── Helper Functions ───────────────
+/**
+ * Round a dayjs timestamp to the nearest half-hour boundary.
+ * If minutes < 30 → set to :30; else → bump to next full hour.
+ *
+ * @param {dayjs.Dayjs} d  Input timestamp.
+ * @returns {dayjs.Dayjs}
+ */
 function roundToHalfHour(d) {
-  const minute = d.minute();
-  if (minute < 30) {
+  const m = d.minute();
+  if (m < 30) {
+    // move up to the half-hour mark
     return d.set("minute", 30).set("second", 0).set("millisecond", 0);
-  } else {
-    // e.g. 13:45 => 14:00
-    return d.set("minute", 60).set("second", 0).set("millisecond", 0);
   }
+  // move up to the next hour mark
+  return d.set("minute", 60).set("second", 0).set("millisecond", 0);
 }
 
-//
-// 4) Round a date/time up to the *next* whole hour.
-//    e.g. if d=07:47 => 08:00, if d=07:03 => 08:00
-//
+/**
+ * Round a dayjs timestamp up to the next full hour.
+ *
+ * @param {dayjs.Dayjs} d  Input timestamp.
+ * @returns {dayjs.Dayjs}
+ */
 function roundUpToHour(d) {
   return d.set("minute", 60).set("second", 0).set("millisecond", 0);
 }
 
+// ─────────────── Exports ───────────────
 module.exports = {
   calculateFreeIntervals,
-  breakDownFreeTime,
+  breakDownFreeTime
 };
