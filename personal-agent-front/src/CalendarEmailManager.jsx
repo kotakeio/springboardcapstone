@@ -166,7 +166,7 @@ export default function CalendarEmailManager({
         setStatusMessage("Added new email!")
         setNewEmail("")
         setIsAddModalOpen(false)
-        setNewlyAddedEmailId(data.email._id)
+        setNewlyAddedEmailId(data.userEmail._id)
         fetchEmails()
         onCalendarUpdate?.()
       } else {
