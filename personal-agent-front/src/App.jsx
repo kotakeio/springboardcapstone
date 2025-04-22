@@ -76,7 +76,7 @@ function App() {
   }, [setUser]);
 
   if (!isAuthChecked) {
-    return <div>Loading Agents...</div>;
+    return <div>Loading Agents... May take up to 60 seconds for the intial load. Just need to wake up the server.</div>;
   }
 
   // ─── Handlers ───

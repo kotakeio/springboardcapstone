@@ -95,53 +95,64 @@ export default function CalendarEmailManager({
     }
   }
 
-  /**
-   * Verify calendar sharing setup for a given email.
-   * Ensures at least a 3s spinner for a consistent UX.
-   *
-   * @param {string} emailId  ID of the email to verify.
-   */
-  async function handleVerify(emailId) {
-    setStatusMessage("")
-    setVerifyingEmailId(emailId)
-    const startTime = Date.now()
-    try {
-      const { data } = await axiosInstance.post(
-        `/api/users/calendarEmails/${emailId}/verify`
-      )
-      const elapsed = Date.now() - startTime
-      if (elapsed < 3000) await delay(3000 - elapsed)
+/**
+ * Verify calendar sharing setup for a given email.
+ * Ensures at least a 3s spinner for a consistent UX.
+ *
+ * @param {string} emailId  ID of the email to verify.
+ */
+async function handleVerify(emailId) {
+  setStatusMessage("");
+  setVerifyingEmailId(emailId);
+  const startTime = Date.now();
 
-      if (data.success) {
-        setStatusMessage("Verified email: " + data.userEmail.email)
-        fetchEmails()
-        onCalendarUpdate?.()
-      } else {
-        setStatusMessage(
-          <>
-            <h2>Calendar Sharing Setup</h2>
-            <p>
-              To allow our app to access your Google Calendar, please share
-              your calendar with our service account email:&nbsp;
-              <strong>agent-692@pc-api-6250374257814573220-956.iam.gserviceaccount.com</strong>
-            </p>
-            <ol>
-              <li>Open Google Calendar &amp; locate the calendar.</li>
-              <li>Go to Settings and sharing.</li>
-              <li>Click “Share with specific people.”</li>
-              <li>Add the service account with “Make changes to events.”</li>
-              <li>Save changes.</li>
-            </ol>
-          </>
-        )
-      }
-    } catch (err) {
-      console.error(err)
-      setStatusMessage("Network error verifying email")
-    } finally {
-      setVerifyingEmailId(null)
+  // Pre‑built JSX block with your instructions
+  const instructions = (
+    <>
+      <h2>Calendar Sharing Setup</h2>
+      <p>
+        To allow our app to access your Google Calendar, please share
+        your calendar with our service account email:&nbsp;
+        <strong>agent-692@pc-api-6250374257814573220-956.iam.gserviceaccount.com</strong>
+      </p>
+      <ol>
+        <li>Open Google Calendar &amp; locate the calendar.</li>
+        <li>Go to Settings and sharing.</li>
+        <li>Click “Share with specific people.”</li>
+        <li>Add the service account with “Make changes to events.”</li>
+        <li>Save changes.</li>
+      </ol>
+    </>
+  );
+
+  try {
+    const { data } = await axiosInstance.post(
+      `/api/users/calendarEmails/${emailId}/verify`
+    );
+    // enforce minimum spinner time
+    const elapsed = Date.now() - startTime;
+    if (elapsed < 3000) await delay(3000 - elapsed);
+
+    if (data.success) {
+      setStatusMessage("Verified email: " + data.userEmail.email);
+      fetchEmails();
+      onCalendarUpdate?.();
+    } else {
+      // backend returned success: false
+      setStatusMessage(instructions);
     }
+  } catch (err) {
+    console.error(err);
+    // treat a 400 response (verification failure) as “show instructions”
+    if (err.response?.status === 400) {
+      setStatusMessage(instructions);
+    } else {
+      setStatusMessage("Network error verifying email");
+    }
+  } finally {
+    setVerifyingEmailId(null);
   }
+}
 
   /**
    * Add a new calendar email via the API.
