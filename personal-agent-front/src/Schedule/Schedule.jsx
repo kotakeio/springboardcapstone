@@ -33,7 +33,6 @@
  import BlockEditor from "./BlockEditor";
  import axiosInstance from "../axiosInstance";
  import CalendarEmailManager from "../CalendarEmailManager";
- import ProgressBar from "../components/ProgressBar";
  import TourGuide from "../TourGuide";
  
  // Extend dayjs with UTC and timezone support
@@ -221,8 +220,6 @@
    return (
      <div className="schedule-container">
        <h2>Today's Schedule</h2>
-       <ProgressBar steps={progressSteps} />
- 
        {loading ? (
          <div>Loading schedule...</div>
        ) : (
